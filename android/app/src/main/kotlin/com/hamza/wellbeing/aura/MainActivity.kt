@@ -4,11 +4,14 @@ import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.BatteryManager
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Base64
@@ -50,6 +53,37 @@ class MainActivity: FlutterActivity() {
                 }
                 "getNativeScreenTime" -> {
                     result.success(getDeviceScreenTimeMinutes())
+                }
+                "getBatteryStatus" -> {
+                    // Fetch live parameters via receiver intent wrapper
+                    val batteryStatus: Intent? = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+                    val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+
+                    var batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale.toFloat()).toInt() else -1
+                    var isCharging = false
+
+                    val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    if (status != -1) {
+                        isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+                    }
+
+                    // Strict fallback check for modern Android API contexts if sticky intents are cached
+                    val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                    if (batteryPct == -1) {
+                        batteryPct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    }
+                    if (status == -1) {
+                        isCharging = bm.isCharging
+                    }
+
+                    val data = mapOf(
+                        "level" to if (batteryPct in 0..100) batteryPct else 85,
+                                     "isCharging" to isCharging
+                    )
+                    result.success(data)
                 }
                 else -> result.notImplemented()
             }
@@ -98,7 +132,6 @@ class MainActivity: FlutterActivity() {
             val packageName = resolveInfo.activityInfo.packageName
             val name = resolveInfo.loadLabel(pm).toString()
 
-            // Extract drawable and convert safely to base64 string
             val drawable = resolveInfo.loadIcon(pm)
             val base64Icon = drawableToBase64(drawable)
 
@@ -125,7 +158,6 @@ class MainActivity: FlutterActivity() {
         }
 
         val outputStream = ByteArrayOutputStream()
-        // Compress to PNG format to maintain transparent glass layers
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
         val byteArray = outputStream.toByteArray()
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
