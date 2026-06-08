@@ -12,17 +12,18 @@ class GlassClock extends StatefulWidget {
 
 class _GlassClockState extends State<GlassClock> {
   late Timer _timer;
-  String _timeString = '';
-  String _dateString = '';
+  DateTime _now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _updateTime();
-    _timer = Timer.periodic(
-      const Duration(seconds: 1),
-      (Timer t) => _updateTime(),
-    );
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _now = DateTime.now();
+        });
+      }
+    });
   }
 
   @override
@@ -31,55 +32,115 @@ class _GlassClockState extends State<GlassClock> {
     super.dispose();
   }
 
-  void _updateTime() {
-    final DateTime now = DateTime.now();
-    setState(() {
-      _timeString = DateFormat('hh:mm').format(now);
-      _dateString = DateFormat('EEE, MMMM d').format(now);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    // 12-hour format for the large numeric display
+    final String localTime = DateFormat('hh:mm').format(_now);
+    final String localAmPm = DateFormat('a').format(_now); // Pulls AM or PM
+
+    // Secondary Clock (e.g., UTC tracking)
+    final String secondaryTime = DateFormat('hh:mm').format(_now.toUtc());
+    final String secondaryAmPm = DateFormat('a').format(_now.toUtc());
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildClockSquircleCard(
+          locationCode: 'LHR',
+          timeString: localTime,
+          amPmString: localAmPm,
+          offsetString: 'Local',
+          isPrimary: true,
+        ),
+        const SizedBox(width: 16),
+        _buildClockSquircleCard(
+          locationCode: 'UTC',
+          timeString: secondaryTime,
+          amPmString: secondaryAmPm,
+          offsetString: '-5h',
+          isPrimary: false,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClockSquircleCard({
+    required String locationCode,
+    required String timeString,
+    required String amPmString,
+    required String offsetString,
+    required bool isPrimary,
+  }) {
     return GlassTheme.buildGlassPanel(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      borderRadius: BorderRadius.circular(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _timeString,
-            style: TextStyle(
-              fontSize: 64,
-              fontWeight: FontWeight.w200,
-              color: Colors.white.withOpacity(0.95),
-              letterSpacing: 2,
-              shadows: [
-                Shadow(
-                  color: Colors.black.withOpacity(0.2),
-                  offset: const Offset(0, 4),
-                  blurRadius: 12,
+      borderRadius: BorderRadius.circular(
+        32,
+      ), // Slightly rounder, punchier squircles
+      padding: EdgeInsets.zero,
+      child: Container(
+        width: 160, // Scaled up width from 150 to accommodate larger text
+        height: 160, // Scaled up height from 150
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          color: isPrimary ? Colors.white.withOpacity(0.05) : Colors.black45,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Top Location Code
+            Text(
+              locationCode,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                decoration: TextDecoration.none,
+              ),
+            ),
+
+            // Bold, Main Time Block with AM/PM Label underneath
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  timeString,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 42, // Enlarged size
+                    fontWeight: FontWeight.w700, // Punchy Bold text weight
+                    letterSpacing: -1.0,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+                Text(
+                  amPmString,
+                  style: TextStyle(
+                    color: isPrimary
+                        ? Colors.cyanAccent.withOpacity(0.8)
+                        : Colors.white60,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.0,
+                    decoration: TextDecoration.none,
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            width: 40,
-            height: 1.5,
-            color: Colors.white.withOpacity(0.3),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _dateString.toUpperCase(),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: Colors.white.withOpacity(0.7),
-              letterSpacing: 1.5,
+
+            // Bottom Offset Status
+            Text(
+              offsetString,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.4),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                decoration: TextDecoration.none,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
