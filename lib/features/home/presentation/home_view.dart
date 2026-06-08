@@ -20,8 +20,7 @@ class _HomeViewState extends State<HomeView> {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-  List<AuraAppModel> _cachedSystemApps =
-      []; // Memory cache to stop search thread lag
+  List<AuraAppModel> _cachedSystemApps = [];
 
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
@@ -36,7 +35,6 @@ class _HomeViewState extends State<HomeView> {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
 
-    // Warm background cache: read apps and pre-decode icon bytes ONCE on home boot
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
@@ -49,14 +47,13 @@ class _HomeViewState extends State<HomeView> {
       temporaryPinsList.add({
         'name': match.name,
         'package': pkg,
-        // Safeguard decoding metrics to raw strings for home array iterations
         'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '',
       });
     }
 
     setState(() {
       _usageStats = stats;
-      _cachedSystemApps = systemApps; // Correctly typed array assignment
+      _cachedSystemApps = systemApps;
       _pinnedAppsList = temporaryPinsList;
       _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
       _wallpaperPath =
@@ -137,7 +134,6 @@ class _HomeViewState extends State<HomeView> {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onVerticalDragEnd: (details) {
-          // Detect rapid downward gesture velocities over the home layout canvas
           if (details.primaryVelocity != null &&
               details.primaryVelocity! > 350) {
             if (!_isSearchOpen) {
@@ -153,96 +149,98 @@ class _HomeViewState extends State<HomeView> {
               onLongPressHome: () {},
               wallpaperType: _wallpaperType,
               wallpaperPath: _wallpaperPath,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20.0,
-                  vertical: 24.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 40),
-                    const GlassClock(),
+              child: SafeArea(
+                // Keep it safe from system notches and nav bars
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20.0,
+                    vertical: 12.0,
+                  ), // Defensive vertical sizing
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 20),
+                      const GlassClock(),
 
-                    const Spacer(),
+                      const Spacer(),
 
-                    GlassTheme.buildGlassPanel(
-                      borderRadius: BorderRadius.circular(24),
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildTitleAppRow(
-                            appName: 'Zenith',
-                            packageName: 'com.hamza.wellbeing.zenith',
-                            isPermanent: true,
-                            iconData: Icons.hourglass_empty_rounded,
-                          ),
+                      GlassTheme.buildGlassPanel(
+                        borderRadius: BorderRadius.circular(24),
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildTitleAppRow(
+                              appName: 'Zenith',
+                              packageName: 'com.hamza.wellbeing.zenith',
+                              isPermanent: true,
+                              iconData: Icons.hourglass_empty_rounded,
+                            ),
 
-                          if (_pinnedAppsList.isNotEmpty)
-                            const Divider(color: Colors.white10, height: 12),
+                            if (_pinnedAppsList.isNotEmpty)
+                              const Divider(color: Colors.white10, height: 12),
 
-                          ListView.builder(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _pinnedAppsList.length,
-                            itemBuilder: (context, index) {
-                              final app = _pinnedAppsList[index];
-                              return Column(
-                                children: [
-                                  if (index > 0)
-                                    const Divider(
-                                      color: Colors.white10,
-                                      height: 12,
+                            ListView.builder(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _pinnedAppsList.length,
+                              itemBuilder: (context, index) {
+                                final app = _pinnedAppsList[index];
+                                return Column(
+                                  children: [
+                                    if (index > 0)
+                                      const Divider(
+                                        color: Colors.white10,
+                                        height: 12,
+                                      ),
+                                    _buildTitleAppRow(
+                                      appName: app['name']!,
+                                      packageName: app['package']!,
+                                      isPermanent: false,
+                                      iconData: Icons.android_rounded,
                                     ),
-                                  _buildTitleAppRow(
-                                    appName: app['name']!,
-                                    packageName: app['package']!,
-                                    isPermanent: false,
-                                    iconData: Icons.android_rounded,
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
+                                  ],
+                                );
+                              },
+                            ),
 
-                          if (_pinnedAppsList.isEmpty) ...[
-                            const Divider(color: Colors.white10, height: 12),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12.0,
-                              ),
-                              child: Text(
-                                "Swipe down anywhere or tap Search to begin",
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.25),
-                                  fontSize: 11,
-                                  fontStyle: FontStyle.italic,
+                            if (_pinnedAppsList.isEmpty) ...[
+                              const Divider(color: Colors.white10, height: 12),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12.0,
+                                ),
+                                child: Text(
+                                  "Swipe down anywhere or tap Search to begin",
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.25),
+                                    fontSize: 11,
+                                    fontStyle: FontStyle.italic,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
-                    BottomDock(
-                      onSearchTap: () => setState(() => _isSearchOpen = true),
-                      onPhoneTap: () => LauncherService.launchPhoneDialer(),
-                      onWhatsAppTap: () => LauncherService.launchWhatsApp(),
-                    ),
-                  ],
+                      BottomDock(
+                        onSearchTap: () => setState(() => _isSearchOpen = true),
+                        onPhoneTap: () => LauncherService.launchPhoneDialer(),
+                        onWhatsAppTap: () => LauncherService.launchWhatsApp(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
 
             if (_isSearchOpen)
               SearchOverlay(
-                preloadedApps:
-                    _cachedSystemApps, // Feeds strongly-typed data array smoothly
+                preloadedApps: _cachedSystemApps,
                 onClose: () {
                   setState(() => _isSearchOpen = false);
                   _loadHomeState();
@@ -272,7 +270,6 @@ class _HomeViewState extends State<HomeView> {
     );
     final String base64Icon = appMatch['icon'] ?? '';
 
-    // Noir Grayscale filter values
     const List<double> grayscaleMatrix = <double>[
       0.2126,
       0.7152,

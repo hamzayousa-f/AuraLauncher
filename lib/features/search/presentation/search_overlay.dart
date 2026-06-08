@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
@@ -7,8 +6,13 @@ import '../../../core/services/usage_service.dart';
 
 class SearchOverlay extends StatefulWidget {
   final VoidCallback onClose;
+  final List<AuraAppModel> preloadedApps;
 
-  const SearchOverlay({super.key, required this.onClose});
+  const SearchOverlay({
+    super.key,
+    required this.onClose,
+    required this.preloadedApps,
+  });
 
   @override
   State<SearchOverlay> createState() => _SearchOverlayState();
@@ -18,43 +22,38 @@ class _SearchOverlayState extends State<SearchOverlay> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  List<Map<String, String>> _allApps = [];
-  List<Map<String, String>> _filteredApps = [];
+  List<AuraAppModel> _filteredApps = [];
   Map<String, int> _usageStats = {};
   List<String> _pinnedPackages = [];
-  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadApplicationsAndStats();
+    _filteredApps = widget.preloadedApps;
+    _loadLiveStatsAndPins();
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _focusNode.requestFocus(),
     );
   }
 
-  Future<void> _loadApplicationsAndStats() async {
-    final apps = await LauncherService.getInstalledApps();
+  Future<void> _loadLiveStatsAndPins() async {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
 
     setState(() {
-      _allApps = apps;
-      _filteredApps = apps;
       _usageStats = stats;
       _pinnedPackages = prefs.getStringList('pinned_custom_apps') ?? [];
-      _isLoading = false;
     });
   }
 
   void _filterSearch(String query) {
     setState(() {
       if (query.isEmpty) {
-        _filteredApps = _allApps;
+        _filteredApps = widget.preloadedApps;
       } else {
-        _filteredApps = _allApps
+        _filteredApps = widget.preloadedApps
             .where(
-              (app) => app['name']!.toLowerCase().contains(query.toLowerCase()),
+              (app) => app.name.toLowerCase().contains(query.toLowerCase()),
             )
             .toList();
       }
@@ -88,6 +87,29 @@ class _SearchOverlayState extends State<SearchOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    const List<double> grayscaleMatrix = <double>[
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -101,8 +123,8 @@ class _SearchOverlayState extends State<SearchOverlay> {
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: 20.0,
-                vertical: 16.0,
-              ),
+                vertical: 10.0,
+              ), // Reduced vertical padding to prevent overflow
               child: Column(
                 children: [
                   GlassTheme.buildGlassPanel(
@@ -133,19 +155,13 @@ class _SearchOverlayState extends State<SearchOverlay> {
                       onChanged: _filterSearch,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
                   Expanded(
                     child: GlassTheme.buildGlassPanel(
                       borderRadius: BorderRadius.circular(24),
-                      padding: const EdgeInsets.all(8),
-                      child: _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white54,
-                              ),
-                            )
-                          : _filteredApps.isEmpty
+                      padding: const EdgeInsets.all(4),
+                      child: _filteredApps.isEmpty
                           ? const Center(
                               child: Text(
                                 'No applications found',
@@ -157,69 +173,79 @@ class _SearchOverlayState extends State<SearchOverlay> {
                               physics: const BouncingScrollPhysics(),
                               itemBuilder: (context, index) {
                                 final app = _filteredApps[index];
-                                final String pkg = app['package'] ?? '';
-                                final String base64Icon = app['icon'] ?? '';
                                 final bool isPinned = _pinnedPackages.contains(
-                                  pkg,
+                                  app.packageName,
                                 );
-
-                                final int minutes = _usageStats[pkg] ?? 0;
-                                final Color timeColor = _getUsageColor(minutes);
+                                final int minutes =
+                                    _usageStats[app.packageName] ?? 0;
                                 final String displayTime = minutes >= 60
                                     ? '${(minutes / 60).floor()}h ${minutes % 60}m'
                                     : '${minutes}m';
 
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 2.0,
+                                    vertical: 1.0,
                                   ),
-                                  child: ListTile(
-                                    leading: SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: base64Icon.isNotEmpty
-                                          ? Image.memory(
-                                              base64Decode(base64Icon),
-                                              fit: BoxFit.contain,
-                                            )
-                                          : const Icon(
-                                              Icons.android,
-                                              color: Colors.white60,
-                                            ),
-                                    ),
-                                    title: Text(
-                                      app['name']!,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w400,
+                                  // Fix ink splash exception: Provide a transparent material layer canvas
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: ListTile(
+                                      leading: SizedBox(
+                                        width: 32,
+                                        height: 32,
+                                        child: app.iconBytes != null
+                                            ? ColorFiltered(
+                                                colorFilter:
+                                                    const ColorFilter.matrix(
+                                                      grayscaleMatrix,
+                                                    ),
+                                                child: Image.memory(
+                                                  app.iconBytes!,
+                                                  fit: BoxFit.contain,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.android,
+                                                color: Colors.white60,
+                                              ),
                                       ),
-                                    ),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (isPinned)
-                                          const Icon(
-                                            Icons.push_pin_rounded,
-                                            color: Colors.cyanAccent,
-                                            size: 14,
-                                          ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          displayTime,
-                                          style: TextStyle(
-                                            color: timeColor,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                      title: Text(
+                                        app.name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w400,
                                         ),
-                                      ],
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isPinned)
+                                            const Icon(
+                                              Icons.push_pin_rounded,
+                                              color: Colors.cyanAccent,
+                                              size: 14,
+                                            ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            displayTime,
+                                            style: TextStyle(
+                                              color: _getUsageColor(minutes),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      onLongPress: () =>
+                                          _togglePinApp(app.packageName),
+                                      onTap: () {
+                                        LauncherService.launchApp(
+                                          app.packageName,
+                                        );
+                                        widget.onClose();
+                                      },
                                     ),
-                                    onLongPress: () => _togglePinApp(pkg),
-                                    onTap: () {
-                                      LauncherService.launchApp(pkg);
-                                      widget.onClose();
-                                    },
                                   ),
                                 );
                               },
