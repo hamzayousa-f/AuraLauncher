@@ -1,14 +1,11 @@
 import 'dart:convert';
-
 import 'package:aura/core/services/launcher_service.dart';
 import 'package:aura/core/services/usage_service.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
-
 import 'glass_clock.dart';
 import 'bottom_dock.dart';
 
@@ -23,18 +20,11 @@ class _HomeViewState extends State<HomeView> {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
+  List<Map<String, String>> _cachedSystemApps =
+      []; // Memory cache to stop search lag
 
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
-
-  final List<Map<String, String>> _presets = [
-    {'name': 'Deep Noir', 'path': 'assets/wallpapers/default_noir.jpg'},
-    {'name': 'Cyber Punk', 'path': 'assets/wallpapers/cyber_cinematic.jpg'},
-    {
-      'name': 'Editorial Minimal',
-      'path': 'assets/wallpapers/editorial_mono.jpg',
-    },
-  ];
 
   @override
   void initState() {
@@ -45,6 +35,8 @@ class _HomeViewState extends State<HomeView> {
   Future<void> _loadHomeState() async {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
+
+    // Warm cache: load apps once on home boot
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
@@ -52,13 +44,18 @@ class _HomeViewState extends State<HomeView> {
     for (String pkg in savedPins) {
       final match = systemApps.firstWhere(
         (app) => app['package'] == pkg,
-        orElse: () => {'name': 'App', 'package': pkg},
+        orElse: () => {'name': 'App', 'package': pkg, 'icon': ''},
       );
-      temporaryPinsList.add({'name': match['name']!, 'package': pkg});
+      temporaryPinsList.add({
+        'name': match['name']!,
+        'package': pkg,
+        'icon': match['icon'] ?? '',
+      });
     }
 
     setState(() {
       _usageStats = stats;
+      _cachedSystemApps = systemApps;
       _pinnedAppsList = temporaryPinsList;
       _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
       _wallpaperPath =
@@ -67,147 +64,58 @@ class _HomeViewState extends State<HomeView> {
     });
   }
 
-  Future<void> _selectPresetWallpaper(String path) async {
+  Future<void> _unpinApp(String packageName) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('wallpaper_type', 'asset');
-    await prefs.setString('wallpaper_path', path);
-    setState(() {
-      _wallpaperType = 'asset';
-      _wallpaperPath = path;
-    });
-    Navigator.pop(context);
-  }
+    List<String> savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
+    savedPins.remove(packageName);
+    await prefs.setStringList('pinned_custom_apps', savedPins);
 
-  Future<void> _pickGalleryWallpaper() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    // Refresh UI instantly
+    _loadHomeState();
 
-    if (image != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('wallpaper_type', 'file');
-      await prefs.setString('wallpaper_path', image.path);
-      setState(() {
-        _wallpaperType = 'file';
-        _wallpaperPath = image.path;
-      });
-      if (mounted) Navigator.pop(context);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('App unpinned from home view')),
+      );
     }
   }
 
-  void _showWallpaperMenu() {
+  void _showUnpinDialog(String appName, String packageName) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black45,
       builder: (context) {
         return GlassTheme.buildGlassPanel(
           borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(30),
-            topRight: Radius.circular(30),
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'WALLPAPER PICKER',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
+              Text(
+                'Manage $appName',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 1.5,
                 ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 120,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    GestureDetector(
-                      onTap: _pickGalleryWallpaper,
-                      child: Container(
-                        width: 90,
-                        margin: const EdgeInsets.only(right: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.photo_library_rounded,
-                              color: Colors.white70,
-                              size: 28,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Gallery',
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    ..._presets.map((preset) {
-                      final bool isSelected =
-                          _wallpaperPath == preset['path'] &&
-                          _wallpaperType == 'asset';
-                      return GestureDetector(
-                        onTap: () => _selectPresetWallpaper(preset['path']!),
-                        child: Container(
-                          width: 90,
-                          margin: const EdgeInsets.only(right: 12),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isSelected
-                                  ? Colors.cyanAccent.withOpacity(0.6)
-                                  : Colors.white10,
-                              width: isSelected ? 2 : 1,
-                            ),
-                            color: Colors.black38,
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Positioned.fill(
-                                child: Container(color: Colors.white10),
-                              ),
-                              Container(color: Colors.black45),
-                              Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Text(
-                                    preset['name']!,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const Icon(
+                  Icons.label_off_rounded,
+                  color: Colors.redAccent,
                 ),
+                title: const Text(
+                  'Unpin from Home Screen',
+                  style: TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _unpinApp(packageName);
+                },
               ),
             ],
           ),
@@ -229,7 +137,7 @@ class _HomeViewState extends State<HomeView> {
       body: Stack(
         children: [
           WallpaperBackground(
-            onLongPressHome: _showWallpaperMenu,
+            onLongPressHome: () {}, // Handled globally or by wallpaper logic
             wallpaperType: _wallpaperType,
             wallpaperPath: _wallpaperPath,
             child: Padding(
@@ -240,10 +148,8 @@ class _HomeViewState extends State<HomeView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const SizedBox(
-                    height: 40,
-                  ), // Spaced down for Android safe-bar status regions
-                  GlassClock(),
+                  const SizedBox(height: 40),
+                  const GlassClock(),
 
                   const Spacer(),
 
@@ -319,15 +225,12 @@ class _HomeViewState extends State<HomeView> {
           ),
 
           if (_isSearchOpen)
-            AnimatedOpacity(
-              opacity: _isSearchOpen ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 150),
-              child: SearchOverlay(
-                onClose: () {
-                  setState(() => _isSearchOpen = false);
-                  _loadHomeState();
-                },
-              ),
+            SearchOverlay(
+              preloadedApps: _cachedSystemApps, // Instant load injection
+              onClose: () {
+                setState(() => _isSearchOpen = false);
+                _loadHomeState();
+              },
             ),
         ],
       ),
@@ -345,16 +248,23 @@ class _HomeViewState extends State<HomeView> {
     final String displayTime = minutes >= 60
         ? '${(minutes / 60).floor()}h ${minutes % 60}m'
         : '${minutes}m';
+
     final appMatch = _pinnedAppsList.firstWhere(
       (element) => element['package'] == packageName,
       orElse: () => {},
     );
     final String base64Icon = appMatch['icon'] ?? '';
-    // Wrap in Material to satisfy InkWell demands safely
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => LauncherService.launchApp(packageName),
+        onLongPress: isPermanent
+            ? null
+            : () => _showUnpinDialog(
+                appName,
+                packageName,
+              ), // Unpin step mapping trigger
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
