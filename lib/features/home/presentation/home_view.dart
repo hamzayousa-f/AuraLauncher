@@ -20,8 +20,7 @@ class _HomeViewState extends State<HomeView> {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-  List<Map<String, String>> _cachedSystemApps =
-      []; // Memory cache to stop search lag
+  List<Map<String, String>> _cachedSystemApps = [];
 
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
@@ -36,7 +35,6 @@ class _HomeViewState extends State<HomeView> {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
 
-    // Warm cache: load apps once on home boot
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
@@ -70,7 +68,6 @@ class _HomeViewState extends State<HomeView> {
     savedPins.remove(packageName);
     await prefs.setStringList('pinned_custom_apps', savedPins);
 
-    // Refresh UI instantly
     _loadHomeState();
 
     if (mounted) {
@@ -134,105 +131,122 @@ class _HomeViewState extends State<HomeView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          WallpaperBackground(
-            onLongPressHome: () {}, // Handled globally or by wallpaper logic
-            wallpaperType: _wallpaperType,
-            wallpaperPath: _wallpaperPath,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20.0,
-                vertical: 24.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 40),
-                  const GlassClock(),
+      // Wrap your entire desktop footprint in a raw gesture interaction interceptor
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragEnd: (details) {
+          // If the primary velocity value registers as positive, the user swiped downwards
+          if (details.primaryVelocity != null &&
+              details.primaryVelocity! > 350) {
+            if (!_isSearchOpen) {
+              setState(() {
+                _isSearchOpen = true;
+              });
+            }
+          }
+        },
+        child: Stack(
+          children: [
+            WallpaperBackground(
+              onLongPressHome: () {},
+              wallpaperType: _wallpaperType,
+              wallpaperPath: _wallpaperPath,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20.0,
+                  vertical: 24.0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 40),
+                    const GlassClock(),
 
-                  const Spacer(),
+                    const Spacer(),
 
-                  GlassTheme.buildGlassPanel(
-                    borderRadius: BorderRadius.circular(24),
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildTitleAppRow(
-                          appName: 'Zenith',
-                          packageName: 'com.hamza.wellbeing.zenith',
-                          isPermanent: true,
-                          iconData: Icons.hourglass_empty_rounded,
-                        ),
+                    GlassTheme.buildGlassPanel(
+                      borderRadius: BorderRadius.circular(24),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildTitleAppRow(
+                            appName: 'Zenith',
+                            packageName: 'com.hamza.wellbeing.zenith',
+                            isPermanent: true,
+                            iconData: Icons.hourglass_empty_rounded,
+                          ),
 
-                        if (_pinnedAppsList.isNotEmpty)
-                          const Divider(color: Colors.white10, height: 12),
+                          if (_pinnedAppsList.isNotEmpty)
+                            const Divider(color: Colors.white10, height: 12),
 
-                        ListView.builder(
-                          shrinkWrap: true,
-                          padding: EdgeInsets.zero,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _pinnedAppsList.length,
-                          itemBuilder: (context, index) {
-                            final app = _pinnedAppsList[index];
-                            return Column(
-                              children: [
-                                if (index > 0)
-                                  const Divider(
-                                    color: Colors.white10,
-                                    height: 12,
+                          ListView.builder(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: _pinnedAppsList.length,
+                            itemBuilder: (context, index) {
+                              final app = _pinnedAppsList[index];
+                              return Column(
+                                children: [
+                                  if (index > 0)
+                                    const Divider(
+                                      color: Colors.white10,
+                                      height: 12,
+                                    ),
+                                  _buildTitleAppRow(
+                                    appName: app['name']!,
+                                    packageName: app['package']!,
+                                    isPermanent: false,
+                                    iconData: Icons.android_rounded,
                                   ),
-                                _buildTitleAppRow(
-                                  appName: app['name']!,
-                                  packageName: app['package']!,
-                                  isPermanent: false,
-                                  iconData: Icons.android_rounded,
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+                                ],
+                              );
+                            },
+                          ),
 
-                        if (_pinnedAppsList.isEmpty) ...[
-                          const Divider(color: Colors.white10, height: 12),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12.0),
-                            child: Text(
-                              "Long press apps inside Search to pin them here",
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.25),
-                                fontSize: 11,
-                                fontStyle: FontStyle.italic,
+                          if (_pinnedAppsList.isEmpty) ...[
+                            const Divider(color: Colors.white10, height: 12),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12.0,
+                              ),
+                              child: Text(
+                                "Swipe down anywhere or tap Search to begin",
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.25),
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-                  BottomDock(
-                    onSearchTap: () => setState(() => _isSearchOpen = true),
-                    onPhoneTap: () => LauncherService.launchPhoneDialer(),
-                    onWhatsAppTap: () => LauncherService.launchWhatsApp(),
-                  ),
-                ],
+                    BottomDock(
+                      onSearchTap: () => setState(() => _isSearchOpen = true),
+                      onPhoneTap: () => LauncherService.launchPhoneDialer(),
+                      onWhatsAppTap: () => LauncherService.launchWhatsApp(),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          if (_isSearchOpen)
-            SearchOverlay(
-              preloadedApps: _cachedSystemApps, // Instant load injection
-              onClose: () {
-                setState(() => _isSearchOpen = false);
-                _loadHomeState();
-              },
-            ),
-        ],
+            if (_isSearchOpen)
+              SearchOverlay(
+                preloadedApps: _cachedSystemApps,
+                onClose: () {
+                  setState(() => _isSearchOpen = false);
+                  _loadHomeState();
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -261,10 +275,7 @@ class _HomeViewState extends State<HomeView> {
         onTap: () => LauncherService.launchApp(packageName),
         onLongPress: isPermanent
             ? null
-            : () => _showUnpinDialog(
-                appName,
-                packageName,
-              ), // Unpin step mapping trigger
+            : () => _showUnpinDialog(appName, packageName),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
