@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
@@ -64,24 +65,9 @@ class _SearchOverlayState extends State<SearchOverlay> {
     final prefs = await SharedPreferences.getInstance();
     if (_pinnedPackages.contains(packageName)) {
       _pinnedPackages.remove(packageName);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('App unpinned from Home Screen')),
-      );
     } else {
-      if (_pinnedPackages.length >= 3) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Home screen slot maxed out! Only 3 custom pins allowed.',
-            ),
-          ),
-        );
-        return;
-      }
+      if (_pinnedPackages.length >= 3) return;
       _pinnedPackages.add(packageName);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('App pinned to Home Screen!')),
-      );
     }
     await prefs.setStringList('pinned_custom_apps', _pinnedPackages);
     setState(() {});
@@ -172,6 +158,7 @@ class _SearchOverlayState extends State<SearchOverlay> {
                               itemBuilder: (context, index) {
                                 final app = _filteredApps[index];
                                 final String pkg = app['package'] ?? '';
+                                final String base64Icon = app['icon'] ?? '';
                                 final bool isPinned = _pinnedPackages.contains(
                                   pkg,
                                 );
@@ -187,19 +174,18 @@ class _SearchOverlayState extends State<SearchOverlay> {
                                     vertical: 2.0,
                                   ),
                                   child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: Colors.white.withOpacity(
-                                        0.06,
-                                      ),
-                                      child: Icon(
-                                        isPinned
-                                            ? Icons.push_pin_rounded
-                                            : Icons.android,
-                                        color: isPinned
-                                            ? Colors.cyanAccent
-                                            : Colors.white60,
-                                        size: 20,
-                                      ),
+                                    leading: SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: base64Icon.isNotEmpty
+                                          ? Image.memory(
+                                              base64Decode(base64Icon),
+                                              fit: BoxFit.contain,
+                                            )
+                                          : const Icon(
+                                              Icons.android,
+                                              color: Colors.white60,
+                                            ),
                                     ),
                                     title: Text(
                                       app['name']!,
@@ -209,22 +195,25 @@ class _SearchOverlayState extends State<SearchOverlay> {
                                         fontWeight: FontWeight.w400,
                                       ),
                                     ),
-                                    subtitle: isPinned
-                                        ? const Text(
-                                            'Long-press to unpin',
-                                            style: TextStyle(
-                                              color: Colors.white38,
-                                              fontSize: 11,
-                                            ),
-                                          )
-                                        : null,
-                                    trailing: Text(
-                                      displayTime,
-                                      style: TextStyle(
-                                        color: timeColor,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isPinned)
+                                          const Icon(
+                                            Icons.push_pin_rounded,
+                                            color: Colors.cyanAccent,
+                                            size: 14,
+                                          ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          displayTime,
+                                          style: TextStyle(
+                                            color: timeColor,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     onLongPress: () => _togglePinApp(pkg),
                                     onTap: () {

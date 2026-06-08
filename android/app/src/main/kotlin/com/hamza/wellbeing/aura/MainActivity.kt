@@ -5,12 +5,18 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Process
 import android.provider.Settings
+import android.util.Base64
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.util.Calendar
 import java.util.Locale
 
@@ -52,11 +58,7 @@ class MainActivity: FlutterActivity() {
 
     private fun isUsageStatsPermissionGranted(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = appOps.checkOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-                                         packageName
-        )
+        val mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
@@ -65,27 +67,20 @@ class MainActivity: FlutterActivity() {
         if (!isUsageStatsPermissionGranted()) return statsMap
 
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-
-            // Calculate the timeframe beginning from midnight today
-            val calendar = Calendar.getInstance()
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val startTime = calendar.timeInMillis
-            val endTime = System.currentTimeMillis()
-
-            // Query daily interval metrics
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
             val usageStats = usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY, startTime, endTime
+                UsageStatsManager.INTERVAL_DAILY, calendar.timeInMillis, System.currentTimeMillis()
             )
 
             if (usageStats != null) {
                 for (stat in usageStats) {
-                    val totalTimeInForeground = stat.totalTimeInForeground
-                    if (totalTimeInForeground > 0) {
-                        val minutes = (totalTimeInForeground / (1000 * 60)).toInt()
-                        // Aggregate times if duplicate packages appear in system logs
+                    if (stat.totalTimeInForeground > 0) {
+                        val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
                         statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
                     }
                 }
@@ -98,13 +93,42 @@ class MainActivity: FlutterActivity() {
         val pm = packageManager
         val mainIntent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
         val launchables = pm.queryIntentActivities(mainIntent, 0)
+
         for (resolveInfo in launchables) {
+            val packageName = resolveInfo.activityInfo.packageName
+            val name = resolveInfo.loadLabel(pm).toString()
+
+            // Extract drawable and convert safely to base64 string
+            val drawable = resolveInfo.loadIcon(pm)
+            val base64Icon = drawableToBase64(drawable)
+
             apps.add(mapOf(
-                "name" to resolveInfo.loadLabel(pm).toString(),
-                           "package" to resolveInfo.activityInfo.packageName
+                "name" to name,
+                "package" to packageName,
+                "icon" to base64Icon
             ))
         }
         return apps.sortedBy { (it["name"] as String).lowercase(Locale.ROOT) }
+    }
+
+    private fun drawableToBase64(drawable: Drawable): String {
+        val bitmap = if (drawable is BitmapDrawable) {
+            drawable.bitmap
+        } else {
+            val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 100
+            val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 100
+            val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bmp
+        }
+
+        val outputStream = ByteArrayOutputStream()
+        // Compress to PNG format to maintain transparent glass layers
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+        val byteArray = outputStream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 
     private fun executeLaunchIntent(pkgName: String): Boolean {

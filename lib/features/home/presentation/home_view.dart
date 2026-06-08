@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:aura/core/services/launcher_service.dart';
 import 'package:aura/core/services/usage_service.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
@@ -343,7 +345,11 @@ class _HomeViewState extends State<HomeView> {
     final String displayTime = minutes >= 60
         ? '${(minutes / 60).floor()}h ${minutes % 60}m'
         : '${minutes}m';
-
+    final appMatch = _pinnedAppsList.firstWhere(
+      (element) => element['package'] == packageName,
+      orElse: () => {},
+    );
+    final String base64Icon = appMatch['icon'] ?? '';
     // Wrap in Material to satisfy InkWell demands safely
     return Material(
       color: Colors.transparent,
@@ -354,12 +360,21 @@ class _HomeViewState extends State<HomeView> {
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
           child: Row(
             children: [
-              Icon(
-                iconData,
-                color: isPermanent
-                    ? Colors.cyanAccent.withOpacity(0.8)
-                    : Colors.white70,
-                size: 22,
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: isPermanent
+                    ? Icon(
+                        iconData,
+                        color: Colors.cyanAccent.withOpacity(0.8),
+                        size: 22,
+                      )
+                    : base64Icon.isNotEmpty
+                    ? Image.memory(
+                        base64Decode(base64Icon),
+                        fit: BoxFit.contain,
+                      )
+                    : Icon(iconData, color: Colors.white70, size: 22),
               ),
               const SizedBox(width: 16),
               Expanded(
