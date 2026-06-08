@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
+
 import 'glass_clock.dart';
 import 'bottom_dock.dart';
 
@@ -21,11 +22,9 @@ class _HomeViewState extends State<HomeView> {
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
 
-  // Wallpaper State Rules
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
 
-  // Built-in presets matching your preference for high-contrast noir / cinematic tones
   final List<Map<String, String>> _presets = [
     {'name': 'Deep Noir', 'path': 'assets/wallpapers/default_noir.jpg'},
     {'name': 'Cyber Punk', 'path': 'assets/wallpapers/cyber_cinematic.jpg'},
@@ -125,7 +124,6 @@ class _HomeViewState extends State<HomeView> {
                   scrollDirection: Axis.horizontal,
                   physics: const BouncingScrollPhysics(),
                   children: [
-                    // Trigger block to browse device gallery contents
                     GestureDetector(
                       onTap: _pickGalleryWallpaper,
                       child: Container(
@@ -157,7 +155,6 @@ class _HomeViewState extends State<HomeView> {
                       ),
                     ),
 
-                    // Render our beautiful cinematic presets
                     ..._presets.map((preset) {
                       final bool isSelected =
                           _wallpaperPath == preset['path'] &&
@@ -180,26 +177,26 @@ class _HomeViewState extends State<HomeView> {
                           clipBehavior: Clip.antiAlias,
                           child: Stack(
                             fit: StackFit.expand,
-                            alignment: Alignment.bottomCenter,
                             children: [
                               Positioned.fill(
-                                child: Container(
-                                  color: Colors.white10,
-                                ), // Placeholder color block
+                                child: Container(color: Colors.white10),
                               ),
                               Container(color: Colors.black45),
-                              Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: Text(
-                                  preset['name']!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
+                              Align(
+                                alignment: Alignment.bottomCenter,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: Text(
+                                    preset['name']!,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -225,108 +222,113 @@ class _HomeViewState extends State<HomeView> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        WallpaperBackground(
-          onLongPressHome: _showWallpaperMenu,
-          wallpaperType: _wallpaperType,
-          wallpaperPath: _wallpaperPath,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 20.0,
-              vertical: 24.0,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 20),
-                GlassClock(),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          WallpaperBackground(
+            onLongPressHome: _showWallpaperMenu,
+            wallpaperType: _wallpaperType,
+            wallpaperPath: _wallpaperPath,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20.0,
+                vertical: 24.0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    height: 40,
+                  ), // Spaced down for Android safe-bar status regions
+                  GlassClock(),
 
-                const Spacer(),
+                  const Spacer(),
 
-                GlassTheme.buildGlassPanel(
-                  borderRadius: BorderRadius.circular(24),
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildTitleAppRow(
-                        appName: 'Zenith',
-                        packageName: 'com.hamza.wellbeing.zenith',
-                        isPermanent: true,
-                        iconData: Icons.hourglass_empty_rounded,
-                      ),
+                  GlassTheme.buildGlassPanel(
+                    borderRadius: BorderRadius.circular(24),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTitleAppRow(
+                          appName: 'Zenith',
+                          packageName: 'com.hamza.wellbeing.zenith',
+                          isPermanent: true,
+                          iconData: Icons.hourglass_empty_rounded,
+                        ),
 
-                      if (_pinnedAppsList.isNotEmpty)
-                        const Divider(color: Colors.white10, height: 12),
+                        if (_pinnedAppsList.isNotEmpty)
+                          const Divider(color: Colors.white10, height: 12),
 
-                      ListView.builder(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _pinnedAppsList.length,
-                        itemBuilder: (context, index) {
-                          final app = _pinnedAppsList[index];
-                          return Column(
-                            children: [
-                              if (index > 0)
-                                const Divider(
-                                  color: Colors.white10,
-                                  height: 12,
+                        ListView.builder(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _pinnedAppsList.length,
+                          itemBuilder: (context, index) {
+                            final app = _pinnedAppsList[index];
+                            return Column(
+                              children: [
+                                if (index > 0)
+                                  const Divider(
+                                    color: Colors.white10,
+                                    height: 12,
+                                  ),
+                                _buildTitleAppRow(
+                                  appName: app['name']!,
+                                  packageName: app['package']!,
+                                  isPermanent: false,
+                                  iconData: Icons.android_rounded,
                                 ),
-                              _buildTitleAppRow(
-                                appName: app['name']!,
-                                packageName: app['package']!,
-                                isPermanent: false,
-                                iconData: Icons.android_rounded,
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                              ],
+                            );
+                          },
+                        ),
 
-                      if (_pinnedAppsList.isEmpty) ...[
-                        const Divider(color: Colors.white10, height: 12),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12.0),
-                          child: Text(
-                            "Long press apps inside Search to pin them here",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.25),
-                              fontSize: 11,
-                              fontStyle: FontStyle.italic,
+                        if (_pinnedAppsList.isEmpty) ...[
+                          const Divider(color: Colors.white10, height: 12),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12.0),
+                            child: Text(
+                              "Long press apps inside Search to pin them here",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.25),
+                                fontSize: 11,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
-                BottomDock(
-                  onSearchTap: () => setState(() => _isSearchOpen = true),
-                  onPhoneTap: () => LauncherService.launchPhoneDialer(),
-                  onWhatsAppTap: () => LauncherService.launchWhatsApp(),
-                ),
-              ],
+                  BottomDock(
+                    onSearchTap: () => setState(() => _isSearchOpen = true),
+                    onPhoneTap: () => LauncherService.launchPhoneDialer(),
+                    onWhatsAppTap: () => LauncherService.launchWhatsApp(),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
 
-        if (_isSearchOpen)
-          AnimatedOpacity(
-            opacity: _isSearchOpen ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 150),
-            child: SearchOverlay(
-              onClose: () {
-                setState(() => _isSearchOpen = false);
-                _loadHomeState();
-              },
+          if (_isSearchOpen)
+            AnimatedOpacity(
+              opacity: _isSearchOpen ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 150),
+              child: SearchOverlay(
+                onClose: () {
+                  setState(() => _isSearchOpen = false);
+                  _loadHomeState();
+                },
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -342,42 +344,46 @@ class _HomeViewState extends State<HomeView> {
         ? '${(minutes / 60).floor()}h ${minutes % 60}m'
         : '${minutes}m';
 
-    return InkWell(
-      onTap: () => LauncherService.launchApp(packageName),
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
-        child: Row(
-          children: [
-            Icon(
-              iconData,
-              color: isPermanent
-                  ? Colors.cyanAccent.withOpacity(0.8)
-                  : Colors.white70,
-              size: 22,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                appName,
+    // Wrap in Material to satisfy InkWell demands safely
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => LauncherService.launchApp(packageName),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
+          child: Row(
+            children: [
+              Icon(
+                iconData,
+                color: isPermanent
+                    ? Colors.cyanAccent.withOpacity(0.8)
+                    : Colors.white70,
+                size: 22,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  appName,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 16,
+                    fontWeight: isPermanent ? FontWeight.w600 : FontWeight.w400,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+              Text(
+                displayTime,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
-                  fontSize: 16,
-                  fontWeight: isPermanent ? FontWeight.w600 : FontWeight.w400,
+                  color: usageColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                   decoration: TextDecoration.none,
                 ),
               ),
-            ),
-            Text(
-              displayTime,
-              style: TextStyle(
-                color: usageColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.none,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
