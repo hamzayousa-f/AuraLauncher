@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'package:aura/core/services/launcher_service.dart';
-import 'package:aura/core/services/usage_service.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
+import '../../../core/services/launcher_service.dart';
+import '../../../core/services/usage_service.dart';
 import 'glass_clock.dart';
 import 'bottom_dock.dart';
 
@@ -20,7 +20,8 @@ class _HomeViewState extends State<HomeView> {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-  List<Map<String, String>> _cachedSystemApps = [];
+  List<AuraAppModel> _cachedSystemApps =
+      []; // Memory cache to stop search thread lag
 
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
@@ -35,25 +36,27 @@ class _HomeViewState extends State<HomeView> {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
 
+    // Warm background cache: read apps and pre-decode icon bytes ONCE on home boot
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
     List<Map<String, String>> temporaryPinsList = [];
     for (String pkg in savedPins) {
       final match = systemApps.firstWhere(
-        (app) => app['package'] == pkg,
-        orElse: () => {'name': 'App', 'package': pkg, 'icon': ''},
+        (app) => app.packageName == pkg,
+        orElse: () => AuraAppModel(name: 'App', packageName: pkg),
       );
       temporaryPinsList.add({
-        'name': match['name']!,
+        'name': match.name,
         'package': pkg,
-        'icon': match['icon'] ?? '',
+        // Safeguard decoding metrics to raw strings for home array iterations
+        'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '',
       });
     }
 
     setState(() {
       _usageStats = stats;
-      _cachedSystemApps = systemApps;
+      _cachedSystemApps = systemApps; // Correctly typed array assignment
       _pinnedAppsList = temporaryPinsList;
       _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
       _wallpaperPath =
@@ -131,11 +134,10 @@ class _HomeViewState extends State<HomeView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // Wrap your entire desktop footprint in a raw gesture interaction interceptor
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onVerticalDragEnd: (details) {
-          // If the primary velocity value registers as positive, the user swiped downwards
+          // Detect rapid downward gesture velocities over the home layout canvas
           if (details.primaryVelocity != null &&
               details.primaryVelocity! > 350) {
             if (!_isSearchOpen) {
@@ -239,7 +241,8 @@ class _HomeViewState extends State<HomeView> {
 
             if (_isSearchOpen)
               SearchOverlay(
-                preloadedApps: _cachedSystemApps,
+                preloadedApps:
+                    _cachedSystemApps, // Feeds strongly-typed data array smoothly
                 onClose: () {
                   setState(() => _isSearchOpen = false);
                   _loadHomeState();
@@ -269,6 +272,30 @@ class _HomeViewState extends State<HomeView> {
     );
     final String base64Icon = appMatch['icon'] ?? '';
 
+    // Noir Grayscale filter values
+    const List<double> grayscaleMatrix = <double>[
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0.2126,
+      0.7152,
+      0.0722,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ];
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -291,9 +318,12 @@ class _HomeViewState extends State<HomeView> {
                         size: 22,
                       )
                     : base64Icon.isNotEmpty
-                    ? Image.memory(
-                        base64Decode(base64Icon),
-                        fit: BoxFit.contain,
+                    ? ColorFiltered(
+                        colorFilter: const ColorFilter.matrix(grayscaleMatrix),
+                        child: Image.memory(
+                          base64Decode(base64Icon),
+                          fit: BoxFit.contain,
+                        ),
                       )
                     : Icon(iconData, color: Colors.white70, size: 22),
               ),
