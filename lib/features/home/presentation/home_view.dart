@@ -2,6 +2,7 @@ import 'package:aura/core/services/launcher_service.dart';
 import 'package:aura/core/services/usage_service.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
@@ -20,6 +21,20 @@ class _HomeViewState extends State<HomeView> {
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
 
+  // Wallpaper State Rules
+  String _wallpaperType = 'asset';
+  String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
+
+  // Built-in presets matching your preference for high-contrast noir / cinematic tones
+  final List<Map<String, String>> _presets = [
+    {'name': 'Deep Noir', 'path': 'assets/wallpapers/default_noir.jpg'},
+    {'name': 'Cyber Punk', 'path': 'assets/wallpapers/cyber_cinematic.jpg'},
+    {
+      'name': 'Editorial Minimal',
+      'path': 'assets/wallpapers/editorial_mono.jpg',
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -32,7 +47,6 @@ class _HomeViewState extends State<HomeView> {
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
-    // Map saved package tokens back to visible titles
     List<Map<String, String>> temporaryPinsList = [];
     for (String pkg in savedPins) {
       final match = systemApps.firstWhere(
@@ -45,32 +59,158 @@ class _HomeViewState extends State<HomeView> {
     setState(() {
       _usageStats = stats;
       _pinnedAppsList = temporaryPinsList;
+      _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
+      _wallpaperPath =
+          prefs.getString('wallpaper_path') ??
+          'assets/wallpapers/default_noir.jpg';
     });
+  }
+
+  Future<void> _selectPresetWallpaper(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wallpaper_type', 'asset');
+    await prefs.setString('wallpaper_path', path);
+    setState(() {
+      _wallpaperType = 'asset';
+      _wallpaperPath = path;
+    });
+    Navigator.pop(context);
+  }
+
+  Future<void> _pickGalleryWallpaper() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('wallpaper_type', 'file');
+      await prefs.setString('wallpaper_path', image.path);
+      setState(() {
+        _wallpaperType = 'file';
+        _wallpaperPath = image.path;
+      });
+      if (mounted) Navigator.pop(context);
+    }
   }
 
   void _showWallpaperMenu() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black45,
       builder: (context) {
         return GlassTheme.buildGlassPanel(
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(30),
             topRight: Radius.circular(30),
           ),
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            height: 200,
-            width: double.infinity,
-            alignment: Alignment.center,
-            child: const Text(
-              'Wallpaper Menu',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'WALLPAPER PICKER',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 120,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    // Trigger block to browse device gallery contents
+                    GestureDetector(
+                      onTap: _pickGalleryWallpaper,
+                      child: Container(
+                        width: 90,
+                        margin: const EdgeInsets.only(right: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.photo_library_rounded,
+                              color: Colors.white70,
+                              size: 28,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Gallery',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Render our beautiful cinematic presets
+                    ..._presets.map((preset) {
+                      final bool isSelected =
+                          _wallpaperPath == preset['path'] &&
+                          _wallpaperType == 'asset';
+                      return GestureDetector(
+                        onTap: () => _selectPresetWallpaper(preset['path']!),
+                        child: Container(
+                          width: 90,
+                          margin: const EdgeInsets.only(right: 12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.cyanAccent.withOpacity(0.6)
+                                  : Colors.white10,
+                              width: isSelected ? 2 : 1,
+                            ),
+                            color: Colors.black38,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  color: Colors.white10,
+                                ), // Placeholder color block
+                              ),
+                              Container(color: Colors.black45),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  preset['name']!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -89,6 +229,8 @@ class _HomeViewState extends State<HomeView> {
       children: [
         WallpaperBackground(
           onLongPressHome: _showWallpaperMenu,
+          wallpaperType: _wallpaperType,
+          wallpaperPath: _wallpaperPath,
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: 20.0,
@@ -102,14 +244,12 @@ class _HomeViewState extends State<HomeView> {
 
                 const Spacer(),
 
-                // Clean Title Section Layout Container Box
                 GlassTheme.buildGlassPanel(
                   borderRadius: BorderRadius.circular(24),
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 1. Zenith: Fixed permanently at the top of the rows layout
                       _buildTitleAppRow(
                         appName: 'Zenith',
                         packageName: 'com.hamza.wellbeing.zenith',
@@ -120,7 +260,6 @@ class _HomeViewState extends State<HomeView> {
                       if (_pinnedAppsList.isNotEmpty)
                         const Divider(color: Colors.white10, height: 12),
 
-                      // 2. The 3 Custom Pin Rows allocated from the Search screen
                       ListView.builder(
                         shrinkWrap: true,
                         padding: EdgeInsets.zero,
@@ -146,7 +285,6 @@ class _HomeViewState extends State<HomeView> {
                         },
                       ),
 
-                      // Placeholder helper if slots are vacant
                       if (_pinnedAppsList.isEmpty) ...[
                         const Divider(color: Colors.white10, height: 12),
                         Padding(
@@ -184,7 +322,7 @@ class _HomeViewState extends State<HomeView> {
             child: SearchOverlay(
               onClose: () {
                 setState(() => _isSearchOpen = false);
-                _loadHomeState(); // Pull newly updated app lists back to home state
+                _loadHomeState();
               },
             ),
           ),
