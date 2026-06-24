@@ -27,8 +27,13 @@ class _TactileButtonState extends State<TactileButton> with SingleTickerProvider
       vsync: this,
       duration: const Duration(milliseconds: 90),
     );
+    
+    // Fixed: Properly chain the curve into a continuous Animation token
     _scaleAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
-      Curves.easeInOutCubic.transform(_controller),
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOutCubic,
+      ),
     );
   }
 
