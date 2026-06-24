@@ -57,16 +57,19 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    // Aligned method name with usage_service.dart call to fix MissingPluginException
-                    "getAppUsageStats" -> {
-                        val startTime = call.argument<Long>("startTime")
-                        val endTime = call.argument<Long>("endTime")
+                    // Handle BOTH method names to satisfy both the UI components and the UsageService
+                    "getAppUsageStats", "getNativeScreenTime" -> {
+                        // Use arguments if provided by the service; otherwise fall back to today's midnight
+                        val startTime = call.argument<Long>("startTime") ?: Calendar.getInstance().apply {
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis
 
-                        if (startTime != null && endTime != null) {
-                            result.success(getDeviceScreenTimeMinutes(startTime, endTime))
-                        } else {
-                            result.error("BAD_ARGUMENTS", "Missing explicit calculation intervals", null)
-                        }
+                        val endTime = call.argument<Long>("endTime") ?: System.currentTimeMillis()
+
+                        result.success(getDeviceScreenTimeMinutes(startTime, endTime))
                     }
                     "getBatteryStatus" -> {
                         val batteryStatus: Intent? = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
