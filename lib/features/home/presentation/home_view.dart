@@ -25,8 +25,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-  List<dynamic> _cachedSystemApps = [];
-  
+List<AuraAppModel> _cachedSystemApps = [];  
   String _wallpaperType = 'solid';
   String _wallpaperPath = '0xFF0A0A0A';
 
