@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:aura/features/home/widgets/notification_bell.dart';
-import 'package:aura/features/home/widgets/notification_folder_overlay.dart';
+import 'package:aura/features/home/widgets/notification_center_panel.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,7 +25,8 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-List<AuraAppModel> _cachedSystemApps = [];  
+  List<AuraAppModel> _cachedSystemApps = [];
+  
   String _wallpaperType = 'solid';
   String _wallpaperPath = '0xFF0A0A0A';
 
@@ -191,19 +192,22 @@ List<AuraAppModel> _cachedSystemApps = [];
     return Colors.white38;
   }
 
-  void _openFolderPopup() {
+  void _openNotificationTray() {
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
         barrierDismissible: true,
-        barrierColor: Colors.black45,
+        barrierColor: Colors.black38,
         pageBuilder: (context, animation, secondaryAnimation) {
-          return NotificationFolderOverlay(preloadedApps: _cachedSystemApps);
+          return const NotificationCenterPanel();
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Android 17 style smooth elastic scale container pop
-          return ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+          // Native Android QS Panel style sliding ease-down transition
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, -0.08), 
+              end: Offset.zero
+            ).animate(
               CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
             ),
             child: FadeTransition(opacity: animation, child: child),
@@ -254,13 +258,10 @@ List<AuraAppModel> _cachedSystemApps = [];
                         
                         const Spacer(),
 
-                        // Shifting small bell container seamlessly to the left margin
+                        // Pinned cleanly to the left margin with exact listener hook configurations
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: Hero(
-                            tag: 'notification_folder_hub',
-                            child: NotificationBell(onTap: _openFolderPopup),
-                          ),
+                          child: NotificationBell(onTap: _openNotificationTray),
                         ),
                         
                         const SizedBox(height: 14),
@@ -394,7 +395,7 @@ List<AuraAppModel> _cachedSystemApps = [];
 
               if (_isSearchOpen)
                 SearchOverlay(
-                  preloadedApps: _cachedSystemApps.cast<AuraAppModel>(),
+                  preloadedApps: _cachedSystemApps,
                   onClose: () {
                     setState(() => _isSearchOpen = false);
                     _loadHomeState();

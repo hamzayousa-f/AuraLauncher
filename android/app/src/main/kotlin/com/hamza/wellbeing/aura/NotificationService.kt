@@ -2,44 +2,40 @@ package com.hamza.wellbeing.aura
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.app.Notification
 
 class NotificationService : NotificationListenerService() {
 
     companion object {
-        private var activeNotificationCount = 0
+        private var instance: NotificationService? = null
 
-        fun getNotificationCount(): Int {
-            return activeNotificationCount
-        }
+            fun getActiveNotificationsData(): List<Map<String, String>> {
+                val dataList = mutableListOf<Map<String, String>>()
+                instance?.activeNotifications?.forEach { sbn ->
+                    val extras = sbn.notification.extras
+                    val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+                    val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+
+                    if (title.isNotEmpty() || text.isNotEmpty()) {
+                        val map = mapOf(
+                            "packageName" to sbn.packageName,
+                            "title" to title,
+                            "text" to text
+                        )
+                        dataList.add(map)
+                    }
+                }
+                return dataList
+            }
     }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        updateCount()
+        instance = this
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        super.onNotificationPosted(sbn)
-        updateCount()
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        super.onNotificationRemoved(sbn)
-        updateCount()
-    }
-
-    private fun updateCount() {
-        val activeNotifications = try {
-            activeNotifications
-        } catch (e: Exception) {
-            null
-        }
-
-        // Filter out ongoing system notifications (like media players or persistent status items)
-        activeNotificationCount = activeNotifications?.filter { sbn ->
-            val isOngoing = (sbn.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT) != 0
-            val isLocalOnly = (sbn.notification.flags and android.app.Notification.FLAG_LOCAL_ONLY) != 0
-            !isOngoing && !isLocalOnly
-        }?.size ?: 0
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        instance = null
     }
 }
