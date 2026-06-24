@@ -57,8 +57,16 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    "getNativeScreenTime" -> {
-                        result.success(getDeviceScreenTimeMinutes())
+                    // Aligned method name with usage_service.dart call to fix MissingPluginException
+                    "getAppUsageStats" -> {
+                        val startTime = call.argument<Long>("startTime")
+                        val endTime = call.argument<Long>("endTime")
+
+                        if (startTime != null && endTime != null) {
+                            result.success(getDeviceScreenTimeMinutes(startTime, endTime))
+                        } else {
+                            result.error("BAD_ARGUMENTS", "Missing explicit calculation intervals", null)
+                        }
                     }
                     "getBatteryStatus" -> {
                         val batteryStatus: Intent? = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -116,13 +124,10 @@ class MainActivity: FlutterActivity() {
 
         private fun cleanUpNativePinnedApp(uninstalledPackage: String) {
             try {
-                // Flutter's SharedPreferences stores data file prefixed under "FlutterSharedPreferences"
                 val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                 val jsonKey = "flutter.pinned_custom_apps"
 
                 val savedRawString = prefs.getString(jsonKey, null) ?: return
-
-                // Flutter writes arrays to xml storage stringified via JSON formatters
                 val jsonArray = JSONArray(savedRawString)
                 val updatedList = mutableListOf<String>()
                 var dataChanged = false
@@ -137,7 +142,6 @@ class MainActivity: FlutterActivity() {
                 }
 
                 if (dataChanged) {
-                    // Write back cleaned array elements to storage file directly
                     val outputJsonArray = JSONArray(updatedList)
                     prefs.edit().putString(jsonKey, outputJsonArray.toString()).apply()
                 }
@@ -160,26 +164,25 @@ class MainActivity: FlutterActivity() {
             return mode == AppOpsManager.MODE_ALLOWED
         }
 
-        private fun getDeviceScreenTimeMinutes(): Map<String, Int> {
+        // Now uses parameters passed directly from Dart to enforce a hard midnight reset bounds
+        private fun getDeviceScreenTimeMinutes(startTime: Long, endTime: Long): Map<String, Int> {
             val statsMap = mutableMapOf<String, Int>()
             if (!isUsageStatsPermissionGranted()) return statsMap
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-                val calendar = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
+
+                // Query systemic statistics bounded exactly between Dart calculated 12:00AM window and now
                 val usageStats = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, calendar.timeInMillis, System.currentTimeMillis()
+                    UsageStatsManager.INTERVAL_DAILY, startTime, endTime
                 )
 
                 if (usageStats != null) {
                     for (stat in usageStats) {
                         if (stat.totalTimeInForeground > 0) {
                             val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
-                            statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
+                            if (minutes > 0) {
+                                statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
+                            }
                         }
                     }
                 }
