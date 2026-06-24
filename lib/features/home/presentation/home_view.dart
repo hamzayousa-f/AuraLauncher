@@ -3,6 +3,7 @@ import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/glass_theme.dart';
+import '../../../core/shared/tactile_button.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
 import '../../../core/services/launcher_service.dart';
 import '../../../core/services/usage_service.dart';
@@ -40,7 +41,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Automatically re-query active files when returning to launcher view space
     if (state == AppLifecycleState.resumed) {
       _loadHomeState();
     }
@@ -60,7 +60,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         orElse: () => AuraAppModel(name: '', packageName: '')
       );
       
-      // If the app is no longer present on device, bypass completely
       if (match.packageName.isEmpty) continue;
 
       temporaryPinsList.add({
@@ -89,9 +88,9 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   }
 
   Color _getUsageColor(int minutes) {
-    if (minutes >= 120) return Colors.redAccent;
-    if (minutes >= 60) return Colors.yellowAccent;
-    return Colors.white70;
+    if (minutes >= 120) return Colors.redAccent.withOpacity(0.85);
+    if (minutes >= 60) return Colors.amberAccent.withOpacity(0.85);
+    return Colors.white38;
   }
 
   @override
@@ -103,9 +102,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         onVerticalDragEnd: (details) {
           if (details.primaryVelocity != null && details.primaryVelocity! > 350) {
             if (!_isSearchOpen) {
-              setState(() {
-                _isSearchOpen = true;
-              });
+              setState(() => _isSearchOpen = true);
             }
           }
         },
@@ -121,28 +118,33 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       const GlassClock(),
                       
                       const Spacer(),
                       
+                      // Core Pinned Container with Premium Specular Borders
                       GlassTheme.buildGlassPanel(
-                        borderRadius: BorderRadius.circular(24),
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                        borderRadius: BorderRadius.circular(28),
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              padding: const EdgeInsets.symmetric(horizontal: 10.0),
                               child: _buildTitleAppRow(
-                                appName: 'Zenith',
+                                appName: 'Zenith Dashboard',
                                 packageName: 'com.hamza.wellbeing.zenith',
                                 isPermanent: true,
-                                iconData: Icons.hourglass_empty_rounded,
+                                iconData: Icons.blur_on_rounded,
                               ),
                             ),
                             
-                            if (_pinnedAppsList.isNotEmpty) const Divider(color: Colors.white10, height: 12),
+                            if (_pinnedAppsList.isNotEmpty) 
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 20.0),
+                                child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
+                              ),
 
                             ListView.builder(
                               shrinkWrap: true,
@@ -164,7 +166,15 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                       ScaffoldMessenger.of(context).clearSnackBars();
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
-                                          content: Text('Unpinned $removedAppName'),
+                                          backgroundColor: Colors.white10,
+                                          behavior: SnackBarBehavior.floating,
+                                          margin: const EdgeInsets.all(16),
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          content: Text(
+                                            'Removed $removedAppName from focus layout',
+                                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                          ),
                                           duration: const Duration(seconds: 2),
                                         ),
                                       );
@@ -172,23 +182,31 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                   },
                                   background: Container(
                                     alignment: Alignment.centerRight,
-                                    padding: const EdgeInsets.only(right: 24.0),
+                                    padding: const EdgeInsets.only(right: 28.0),
                                     decoration: BoxDecoration(
-                                      color: Colors.redAccent.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(16),
+                                      color: Colors.redAccent.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Icon(Icons.label_off_rounded, color: Colors.redAccent, size: 20),
+                                    child: const Icon(
+                                      Icons.label_off_rounded, 
+                                      color: Colors.redAccent, 
+                                      size: 18
+                                    ),
                                   ),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10.0),
                                     child: Column(
                                       children: [
-                                        if (index > 0) const Divider(color: Colors.white10, height: 12),
+                                        if (index > 0) 
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 10.0),
+                                            child: Divider(color: Colors.white.withOpacity(0.04), height: 1),
+                                          ),
                                         _buildTitleAppRow(
                                           appName: app['name']!,
                                           packageName: pkgName,
                                           isPermanent: false,
-                                          iconData: Icons.android_rounded,
+                                          iconData: Icons.apps_rounded,
                                         ),
                                       ],
                                     ),
@@ -198,12 +216,20 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                             ),
 
                             if (_pinnedAppsList.isEmpty) ...[
-                              const Divider(color: Colors.white10, height: 12),
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12.0),
+                                padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 20.0),
+                                child: Divider(color: Colors.white.withOpacity(0.05), height: 1),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 20.0),
                                 child: Text(
-                                  "Swipe down anywhere or tap Search to begin",
-                                  style: TextStyle(color: Colors.white.withOpacity(0.25), fontSize: 11, fontStyle: FontStyle.italic),
+                                  "Swipe down or tap Search to curate your focus layout",
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.2), 
+                                    fontSize: 11, 
+                                    fontWeight: FontWeight.w400,
+                                    letterSpacing: 0.2,
+                                  ),
                                 ),
                               ),
                             ]
@@ -256,57 +282,66 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     );
     final String base64Icon = appMatch['icon'] ?? '';
 
+    // Studio-Grade custom luminance matrix matching premium minimalist desktop setups
     const List<double> grayscaleMatrix = <double>[
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0.2126, 0.7152, 0.0722, 0, 0,
-      0,      0,      0,      1, 0,
+      0.21, 0.72, 0.07, 0, 0,
+      0.21, 0.72, 0.07, 0, 0,
+      0.21, 0.72, 0.07, 0, 0,
+      0,    0,    0,    0.45, 0, // Opacity restricted to 45% for minimal blending integration
     ];
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => LauncherService.launchApp(packageName),
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: isPermanent
-                    ? Icon(iconData, color: Colors.cyanAccent.withOpacity(0.8), size: 22)
-                    : base64Icon.isNotEmpty 
-                        ? ColorFiltered(
-                            colorFilter: const ColorFilter.matrix(grayscaleMatrix),
-                            child: Image.memory(base64Decode(base64Icon), fit: BoxFit.contain),
-                          )
-                        : Icon(iconData, color: Colors.white70, size: 22),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  appName,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 16,
-                    fontWeight: isPermanent ? FontWeight.w600 : FontWeight.w400,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-              ),
-              Text(
-                displayTime,
+    return TactileButton(
+      onTap: () => LauncherService.launchApp(packageName),
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
+        child: Row(
+          children: [
+            // Icon Nest with Grayscale Masking
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: isPermanent
+                  ? Icon(iconData, color: Colors.cyanAccent.withOpacity(0.75), size: 18)
+                  : base64Icon.isNotEmpty 
+                      ? ColorFiltered(
+                          colorFilter: const ColorFilter.matrix(grayscaleMatrix),
+                          child: Image.memory(
+                            base64Decode(base64Icon), 
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.medium, // Anti-aliased edge smoothing
+                          ),
+                        )
+                      : Icon(iconData, color: Colors.white30, size: 18),
+            ),
+            const SizedBox(width: 16),
+            
+            // Clean Monospace Typographic Contrast
+            Expanded(
+              child: Text(
+                appName,
                 style: TextStyle(
-                  color: usageColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  color: isPermanent ? Colors.white.withOpacity(0.95) : Colors.white.withOpacity(0.8),
+                  fontSize: 15,
+                  fontWeight: isPermanent ? FontWeight.w500 : FontWeight.w400,
+                  letterSpacing: -0.1,
                   decoration: TextDecoration.none,
                 ),
               ),
-            ],
-          ),
+            ),
+            
+            // Subtle, dim metric timestamp
+            Text(
+              displayTime,
+              style: TextStyle(
+                color: usageColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                letterSpacing: -0.2,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          ],
         ),
       ),
     );
