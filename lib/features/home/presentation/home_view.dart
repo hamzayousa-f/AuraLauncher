@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:aura/features/home/widgets/notification_bell.dart';
+import 'package:aura/features/home/widgets/notification_folder_overlay.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,7 +25,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
-  List<AuraAppModel> _cachedSystemApps = [];
+  List<dynamic> _cachedSystemApps = [];
   
   String _wallpaperType = 'solid';
   String _wallpaperPath = '0xFF0A0A0A';
@@ -126,7 +127,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 24),
               
-              // Option 1: Open Phone Storage Gallery Picker
               TactileButton(
                 onTap: () async {
                   final ImagePicker picker = ImagePicker();
@@ -158,7 +158,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 8),
               
-              // Option 2: Clean Obsidian Void
               TactileButton(
                 onTap: () async {
                   final prefs = await SharedPreferences.getInstance();
@@ -191,6 +190,28 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     if (minutes >= 120) return Colors.redAccent.withOpacity(0.85);
     if (minutes >= 60) return Colors.amberAccent.withOpacity(0.85);
     return Colors.white38;
+  }
+
+  void _openFolderPopup() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.black45,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return NotificationFolderOverlay(preloadedApps: _cachedSystemApps);
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Android 17 style smooth elastic scale container pop
+          return ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
+            child: FadeTransition(opacity: animation, child: child),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -234,14 +255,16 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                         
                         const Spacer(),
 
-                        // Frosted Glass Notification Stream Icon
-                        NotificationBell(
-                          onTap: () {
-                            debugPrint("Aura Core: Open glass notification folder view overlay.");
-                          },
+                        // Shifting small bell container seamlessly to the left margin
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Hero(
+                            tag: 'notification_folder_hub',
+                            child: NotificationBell(onTap: _openFolderPopup),
+                          ),
                         ),
                         
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 14),
                         
                         // Core Pinned Container with Premium Specular Borders
                         GlassTheme.buildGlassPanel(
@@ -372,7 +395,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
 
               if (_isSearchOpen)
                 SearchOverlay(
-                  preloadedApps: _cachedSystemApps,
+                  preloadedApps: _cachedSystemApps.cast<AuraAppModel>(),
                   onClose: () {
                     setState(() => _isSearchOpen = false);
                     _loadHomeState();
