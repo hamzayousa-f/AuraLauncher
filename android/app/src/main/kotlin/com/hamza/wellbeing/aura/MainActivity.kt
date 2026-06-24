@@ -164,24 +164,25 @@ class MainActivity: FlutterActivity() {
             return mode == AppOpsManager.MODE_ALLOWED
         }
 
-        // Now uses parameters passed directly from Dart to enforce a hard midnight reset bounds
         private fun getDeviceScreenTimeMinutes(startTime: Long, endTime: Long): Map<String, Int> {
             val statsMap = mutableMapOf<String, Int>()
             if (!isUsageStatsPermissionGranted()) return statsMap
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Query systemic statistics bounded exactly between Dart calculated 12:00AM window and now
+                // Query the daily interval. Android internally aligns this to the start of the system's current day.
                 val usageStats = usageStatsManager.queryUsageStats(
                     UsageStatsManager.INTERVAL_DAILY, startTime, endTime
                 )
 
                 if (usageStats != null) {
                     for (stat in usageStats) {
+                        // If the app has foreground time in today's bucket, pull it in.
                         if (stat.totalTimeInForeground > 0) {
                             val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
                             if (minutes > 0) {
-                                statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
+                                // Use maxOf to handle duplicate package entries if Android splits system tasks
+                                statsMap[stat.packageName] = maxOf(statsMap[stat.packageName] ?: 0, minutes)
                             }
                         }
                     }
