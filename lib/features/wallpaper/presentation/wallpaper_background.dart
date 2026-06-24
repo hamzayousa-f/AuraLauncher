@@ -2,30 +2,44 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class WallpaperBackground extends StatelessWidget {
+  final String wallpaperType;
+  final String wallpaperPath;
   final Widget child;
   final VoidCallback onLongPressHome;
-  final String wallpaperType; // 'asset' or 'file'
-  final String wallpaperPath;
 
   const WallpaperBackground({
     super.key,
-    required this.child,
-    required this.onLongPressHome,
     required this.wallpaperType,
     required this.wallpaperPath,
+    required this.child,
+    required this.onLongPressHome,
   });
 
   @override
   Widget build(BuildContext context) {
-    ImageProvider backgroundImage;
+    Widget backgroundWidget;
 
-    if (wallpaperType == 'file' && wallpaperPath.isNotEmpty) {
-      backgroundImage = FileImage(File(wallpaperPath));
-    } else if (wallpaperPath.isNotEmpty) {
-      backgroundImage = AssetImage(wallpaperPath);
+    // 1. Strict Type Branching Configuration
+    if (wallpaperType == 'file' && wallpaperPath.isNotEmpty && !wallpaperPath.startsWith('0x')) {
+      final file = File(wallpaperPath);
+      if (file.existsSync()) {
+        backgroundWidget = Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      } else {
+        // Fallback if target storage file was wiped or unlinked
+        backgroundWidget = Container(color: const Color(0xFF0A0A0A));
+      }
+    } else if (wallpaperType == 'solid') {
+      // Safely parse hex string back into native ARGB integers
+      final int colorValue = int.tryParse(wallpaperPath) ?? 0xFF0A0A0A;
+      backgroundWidget = Container(color: Color(colorValue));
     } else {
-      // Clean fallback dark cinematic gradient if no wallpaper is set
-      backgroundImage = const AssetImage('assets/wallpapers/default_noir.jpg');
+      // Default systemic fallback container matching the dark setup
+      backgroundWidget = Container(color: const Color(0xFF0A0A0A));
     }
 
     return GestureDetector(
@@ -33,15 +47,9 @@ class WallpaperBackground extends StatelessWidget {
       behavior: HitTestBehavior.translucent,
       child: Stack(
         children: [
-          // Background Wallpaper Image
-          Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(image: backgroundImage, fit: BoxFit.cover),
-            ),
-          ),
-          // Subtle dark cinematic overlay to protect typography readability
-          Container(color: Colors.black.withOpacity(0.45)),
-          // Main UI Layer Content
+          // Background layer
+          Positioned.fill(child: backgroundWidget),
+          // Interface layout layer
           child,
         ],
       ),
