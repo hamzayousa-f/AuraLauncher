@@ -57,9 +57,7 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    // Handle BOTH method names to satisfy both the UI components and the UsageService
                     "getAppUsageStats", "getNativeScreenTime" -> {
-                        // Use arguments if provided by the service; otherwise fall back to today's midnight
                         val startTime = call.argument<Long>("startTime") ?: Calendar.getInstance().apply {
                             set(Calendar.HOUR_OF_DAY, 0)
                             set(Calendar.MINUTE, 0)
@@ -97,6 +95,19 @@ class MainActivity: FlutterActivity() {
                                          "isCharging" to isCharging
                         )
                         result.success(data)
+                    }
+                    // --- NEW NOTIFICATION STREAM CHANNELS ---
+                    "getNotificationCount" -> {
+                        result.success(NotificationService.getNotificationCount())
+                    }
+                    "checkNotificationPermission" -> {
+                        result.success(isNotificationServiceEnabled())
+                    }
+                    "openNotificationSettings" -> {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -173,7 +184,6 @@ class MainActivity: FlutterActivity() {
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Calculate strict local midnight
                 val calendar = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -183,14 +193,11 @@ class MainActivity: FlutterActivity() {
                 val midnightToday = calendar.timeInMillis
                 val now = System.currentTimeMillis()
 
-                // queryAndAggregateUsageStats returns a combined Map<String, UsageStats>
-                // strictly for the time window provided, bypassing individual interval bucket glitches.
                 val aggregatedStats = usageStatsManager.queryAndAggregateUsageStats(midnightToday, now)
 
                 if (aggregatedStats != null && aggregatedStats.isNotEmpty()) {
                     for ((packageName, stat) in aggregatedStats) {
                         if (stat.totalTimeInForeground > 0) {
-                            // Double check that the app was actually touched today
                             if (stat.lastTimeUsed >= midnightToday || stat.lastTimeStamp >= midnightToday) {
                                 val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
                                 if (minutes > 0) {
@@ -260,6 +267,22 @@ class MainActivity: FlutterActivity() {
                     false
                 }
             } catch (e: Exception) { false }
+        }
+
+        // New internal check layer validating listener registration bindings
+        private fun isNotificationServiceEnabled(): Boolean {
+            val pkgName = packageName
+            val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            if (flat != null && flat.isNotEmpty()) {
+                val names = flat.split(":")
+                for (name in names) {
+                    val componentName = android.content.ComponentName.unflattenFromString(name)
+                    if (componentName != null && componentName.packageName == pkgName) {
+                        return true
+                    }
+                }
+            }
+            return false
         }
 
         override fun onBackPressed() {}

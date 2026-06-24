@@ -2,14 +2,12 @@
     package="com.hamza.wellbeing.aura">
 
     <queries>
-        <!-- Allows Aura to query and list other apps installed on the device -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
-    <!-- Required permissions for a launcher that displays usage stats -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
     <application
@@ -35,11 +33,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
                 
-                <!-- These two lines turn the app into a Home Screen Launcher -->
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <service 
+            android:name=".NotificationService"
+            android:label="Aura Notification Assistant"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <meta-data
             android:name="flutterEmbedding"
