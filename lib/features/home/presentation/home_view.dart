@@ -16,7 +16,7 @@ class HomeView extends StatefulWidget {
   State<HomeView> createState() => _HomeViewState();
 }
 
-class _HomeViewState extends State<HomeView> {
+class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
@@ -28,7 +28,22 @@ class _HomeViewState extends State<HomeView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadHomeState();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Automatically re-query active files when returning to launcher view space
+    if (state == AppLifecycleState.resumed) {
+      _loadHomeState();
+    }
   }
 
   Future<void> _loadHomeState() async {
@@ -42,8 +57,12 @@ class _HomeViewState extends State<HomeView> {
     for (String pkg in savedPins) {
       final match = systemApps.firstWhere(
         (app) => app.packageName == pkg, 
-        orElse: () => AuraAppModel(name: 'App', packageName: pkg)
+        orElse: () => AuraAppModel(name: '', packageName: '')
       );
+      
+      // If the app is no longer present on device, bypass completely
+      if (match.packageName.isEmpty) continue;
+
       temporaryPinsList.add({
         'name': match.name,
         'package': pkg,
@@ -134,10 +153,9 @@ class _HomeViewState extends State<HomeView> {
                                 final app = _pinnedAppsList[index];
                                 final String pkgName = app['package']!;
 
-                                // Wrap user custom apps in a fluid Swipe-to-Dismiss action container
                                 return Dismissible(
                                   key: Key(pkgName),
-                                  direction: DismissDirection.endToStart, // Swipe right-to-left
+                                  direction: DismissDirection.endToStart,
                                   onDismissed: (direction) async {
                                     final String removedAppName = app['name']!;
                                     await _unpinApp(pkgName);
@@ -154,15 +172,12 @@ class _HomeViewState extends State<HomeView> {
                                   },
                                   background: Container(
                                     alignment: Alignment.centerRight,
-padding: const EdgeInsets.only(right: 24.0),                                    decoration: BoxDecoration(
+                                    padding: const EdgeInsets.only(right: 24.0),
+                                    decoration: BoxDecoration(
                                       color: Colors.redAccent.withOpacity(0.15),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
-                                    child: const Icon(
-                                      Icons.label_off_rounded, 
-                                      color: Colors.redAccent, 
-                                      size: 20
-                                    ),
+                                    child: const Icon(Icons.label_off_rounded, color: Colors.redAccent, size: 20),
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 8.0),
