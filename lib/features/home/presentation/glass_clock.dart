@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../../core/services/launcher_service.dart';
-import '../../../core/services/usage_service.dart';
 
 class GlassClock extends StatefulWidget {
   const GlassClock({super.key});
@@ -18,59 +17,44 @@ class _GlassClockState extends State<GlassClock> {
   
   int _batteryLevel = 100;
   bool _isCharging = false;
-  int _totalZenithMinutes = 0;
   int _currentCardIndex = 0; 
 
   @override
   void initState() {
     super.initState();
     
+    // Smooth tick update loop for the main time parameters
     _timeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() => _now = DateTime.now());
       }
     });
 
-    _rotationTimer = Timer.periodic(const Duration(seconds: 6), (timer) async {
+    // 8-second slow kinetic rotation between battery status and atmospheric phrasing
+    _rotationTimer = Timer.periodic(const Duration(seconds: 8), (timer) async {
       if (!mounted) return;
-
-      if (_currentCardIndex == 1) {
-        await _refreshZenithStats();
-      } else {
+      if (_currentCardIndex == 0) {
         await _refreshBatteryMetrics();
       }
-
       setState(() {
         _currentCardIndex = (_currentCardIndex + 1) % 2;
       });
     });
 
-    _refreshZenithStats();
     _refreshBatteryMetrics();
   }
 
-  Future<void> _refreshZenithStats() async {
-    try {
-      final usageData = await UsageService.getZenithUsageData();
-      int totalMinutes = 0;
-      if (usageData != null && usageData.isNotEmpty) {
-        usageData.forEach((key, value) => totalMinutes += value);
-      }
-      if (totalMinutes == 0) totalMinutes = 42;
-
-      if (mounted) setState(() => _totalZenithMinutes = totalMinutes);
-    } catch (_) {
-      if (mounted) setState(() => _totalZenithMinutes = 35);
-    }
-  }
-
   Future<void> _refreshBatteryMetrics() async {
-    final batteryData = await LauncherService.getNativeBatteryStatus();
-    if (mounted) {
-      setState(() {
-        _batteryLevel = batteryData['level'] as int;
-        _isCharging = batteryData['isCharging'] as bool;
-      });
+    try {
+      final batteryData = await LauncherService.getNativeBatteryStatus();
+      if (mounted) {
+        setState(() {
+          _batteryLevel = batteryData['level'] as int;
+          _isCharging = batteryData['isCharging'] as bool;
+        });
+      }
+    } catch (_) {
+      // Clean silent boundary fallback
     }
   }
 
@@ -87,6 +71,25 @@ class _GlassClockState extends State<GlassClock> {
     return '${weekdays[_now.weekday - 1]} // ${months[_now.month - 1]} ${_now.day.toString().padLeft(2, '0')}';
   }
 
+  /// Evaluates system clock constraints to return studio-grade literary tokens
+  Map<String, String> _getAtmosphericTokens() {
+    final int hour = _now.hour;
+
+    if (hour >= 5 && hour < 8) {
+      return {'primary': 'SEHAR', 'secondary': 'AURORA // DAWN'};
+    } else if (hour >= 8 && hour < 12) {
+      return {'primary': 'CHASHT', 'secondary': 'FORENOON LIGHT'};
+    } else if (hour >= 12 && hour < 15) {
+      return {'primary': 'ZAWAAL', 'secondary': 'ZENITH // NOON'};
+    } else if (hour >= 15 && hour < 18) {
+      return {'primary': 'SE_PEHR', 'secondary': 'GOLDEN HOUR'};
+    } else if (hour >= 18 && hour < 21) {
+      return {'primary': 'SHAFAQ', 'secondary': 'CREPUSCULAR'};
+    } else {
+      return {'primary': 'SUKOON', 'secondary': 'NOCTURNAL // VOID'};
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final String hour = _now.hour.toString().padLeft(2, '0');
@@ -94,21 +97,21 @@ class _GlassClockState extends State<GlassClock> {
 
     return Row(
       children: [
-        // Time Display Module
+        // Left Panel: Asymmetric Typographic Chrono Node
         Expanded(
           child: SizedBox(
             height: 106,
             child: GlassTheme.buildGlassPanel(
               borderRadius: BorderRadius.circular(28),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-  textBaseline: TextBaseline.alphabetic, // Fixed parameter name
-  crossAxisAlignment: CrossAxisAlignment.baseline,
-  children: [
+                    textBaseline: TextBaseline.alphabetic,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    children: [
                       Text(
                         hour,
                         style: const TextStyle(
@@ -121,7 +124,7 @@ class _GlassClockState extends State<GlassClock> {
                       Text(
                         ':',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withOpacity(0.2),
                           fontSize: 34,
                           fontWeight: FontWeight.w300,
                         ),
@@ -141,7 +144,7 @@ class _GlassClockState extends State<GlassClock> {
                   Text(
                     _getFormattedDate(),
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.4),
+                      color: Colors.white.withOpacity(0.35),
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 1.2,
@@ -154,7 +157,7 @@ class _GlassClockState extends State<GlassClock> {
         ),
         const SizedBox(width: 14),
         
-        // Rotating System Status Module
+        // Right Panel: The Atmospheric / System Void Node
         Expanded(
           child: SizedBox(
             height: 106,
@@ -163,10 +166,10 @@ class _GlassClockState extends State<GlassClock> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Center(
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 350),
+                  duration: const Duration(milliseconds: 400),
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeInCubic,
-                  child: _currentCardIndex == 0 ? _buildZenithCard() : _buildBatteryCard(),
+                  child: _currentCardIndex == 0 ? _buildAtmosphericCard() : _buildBatteryCard(),
                 ),
               ),
             ),
@@ -176,10 +179,8 @@ class _GlassClockState extends State<GlassClock> {
     );
   }
 
-  Widget _buildZenithCard() {
-    final int hours = (_totalZenithMinutes / 60).floor();
-    final int mins = _totalZenithMinutes % 60;
-    final String displayTime = hours > 0 ? '${hours}h ${mins}m' : '${mins}m';
+  Widget _buildAtmosphericCard() {
+    final tokens = _getAtmosphericTokens();
 
     return Column(
       key: const ValueKey<int>(0),
@@ -187,28 +188,29 @@ class _GlassClockState extends State<GlassClock> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(
-          Icons.blur_on_rounded, 
-          color: Colors.cyanAccent.withOpacity(0.7), 
-          size: 20
+          Icons.lens_blur_rounded, 
+          color: Colors.white.withOpacity(0.25), 
+          size: 16
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          displayTime,
+          tokens['primary']!,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 17,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
-            letterSpacing: -0.2,
+            letterSpacing: 1.5,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 4),
         Text(
-          'ZENITH ACTIVE',
+          tokens['secondary']!,
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withOpacity(0.25),
-            fontSize: 9,
+            fontSize: 8.5,
             fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
+            letterSpacing: 0.6,
           ),
         ),
       ],
@@ -222,26 +224,26 @@ class _GlassClockState extends State<GlassClock> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(
-          _isCharging ? Icons.flash_on_rounded : Icons.bubble_chart_rounded, 
-          color: _isCharging ? Colors.greenAccent : Colors.white60, 
-          size: 20
+          _isCharging ? Icons.bolt_rounded : Icons.hdr_strong_rounded, 
+          color: _isCharging ? Colors.cyanAccent.withOpacity(0.8) : Colors.white24, 
+          size: 16
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           '$_batteryLevel%',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 17,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.9),
+            fontSize: 16,
             fontWeight: FontWeight.w600,
             letterSpacing: -0.2,
           ),
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 4),
         Text(
-          _isCharging ? 'CHARGING ENGINE' : 'BATTERY LEVEL',
+          _isCharging ? 'ENERGY SYNC' : 'BATTERY INDEX',
           style: TextStyle(
             color: Colors.white.withOpacity(0.25),
-            fontSize: 9,
+            fontSize: 8.5,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.8,
           ),
