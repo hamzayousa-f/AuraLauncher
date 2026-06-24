@@ -165,48 +165,28 @@ class MainActivity: FlutterActivity() {
         }
 
         // Now uses parameters passed directly from Dart to enforce a hard midnight reset bounds
-        // Bypasses internal system bucket bugs by calculating directly from raw event streams
         private fun getDeviceScreenTimeMinutes(startTime: Long, endTime: Long): Map<String, Int> {
-            val statsMap = mutableMapOf<String, Long>() // Track raw milliseconds first
-            if (!isUsageStatsPermissionGranted()) return mapOf()
+            val statsMap = mutableMapOf<String, Int>()
+            if (!isUsageStatsPermissionGranted()) return statsMap
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Query the raw events stream between midnight and now
-                val events = usageStatsManager.queryEvents(startTime, endTime)
-                val event = UsageStatsManager.UsageEvents.Event()
+                // Query systemic statistics bounded exactly between Dart calculated 12:00AM window and now
+                val usageStats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, startTime, endTime
+                )
 
-                // Temporary map to track when each app entered the foreground
-                val appStartTimeMap = mutableMapOf<String, Long>()
-
-                while (events.hasNextEvent()) {
-                    events.getNextEvent(event)
-                    val pkgName = event.packageName ?: continue
-
-                    when (event.eventType) {
-                        UsageStatsManager.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                            appStartTimeMap[pkgName] = event.timeStamp
-                        }
-                        UsageStatsManager.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                            val openTime = appStartTimeMap.remove(pkgName)
-                            if (openTime != null && event.timeStamp > openTime) {
-                                val duration = event.timeStamp - openTime
-                                statsMap[pkgName] = (statsMap[pkgName] ?: 0L) + duration
+                if (usageStats != null) {
+                    for (stat in usageStats) {
+                        if (stat.totalTimeInForeground > 0) {
+                            val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
+                            if (minutes > 0) {
+                                statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
                             }
                         }
                     }
                 }
-
-                // Handle apps that are still currently open in the foreground at this moment
-                for ((pkgName, openTime) in appStartTimeMap) {
-                    if (endTime > openTime) {
-                        val duration = endTime - openTime
-                        statsMap[pkgName] = (statsMap[pkgName] ?: 0L) + duration
-                    }
-                }
-
-                // Convert the clean millisecond maps into display minutes
-                return statsMap.mapValues { (_, ms) -> (ms / (1000 * 60)).toInt() }.filterValues { it > 0 }
+                return statsMap
         }
 
         private fun fetchInstalledApplications(): List<Map<String, Any>> {
