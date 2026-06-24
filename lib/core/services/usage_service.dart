@@ -3,19 +3,50 @@ import 'package:flutter/services.dart';
 class UsageService {
   static const MethodChannel _channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
 
-  /// Fetches real-time, accurate screen time metrics straight from the Android kernel.
-  /// Returns a map of package names and their respective foreground usage in minutes.
+  /// Fetches system app foreground metrics strictly bounded between today's 12:00 AM and now.
   static Future<Map<String, int>> getZenithUsageData() async {
     try {
-      final Map<dynamic, dynamic>? nativeData = 
-          await _channel.invokeMethod('getNativeScreenTime');
+      final now = DateTime.now();
       
-      if (nativeData == null) return {};
+      // Calculate local midnight (00:00:00 AM)
+      final DateTime midnightToday = DateTime(now.year, now.month, now.day, 0, 0, 0);
+      
+      final int startTimeMillis = midnightToday.millisecondsSinceEpoch;
+      final int endTimeMillis = now.millisecondsSinceEpoch;
 
-      // Cast the native map safely to a structured Dart Map
-      return nativeData.map((key, value) => MapEntry(key.toString(), value as int));
-    } catch (e) {
-      // Return an empty map on failure to prevent UI stalls; the clock will handle the fallback gracefully
+      final Map<dynamic, dynamic>? rawStats = await _channel.invokeMethod(
+        'getAppUsageStats',
+        {
+          'startTime': startTimeMillis,
+          'endTime': endTimeMillis,
+        },
+      );
+
+      if (rawStats == null || rawStats.isEmpty) {
+        print("UsageService: Received empty or null map from native platform layer.");
+        return {};
+      }
+      
+      final Map<String, int> processedStats = {};
+      
+      rawStats.forEach((key, value) {
+        if (key != null && value != null) {
+          // Safely parse values as generic numbers before transforming to integers
+          // This prevents TypeCast exceptions if the engine bridges them dynamically
+          final String pkgName = key.toString();
+          final int minutes = (value as num).toInt();
+          
+          if (minutes > 0) {
+            processedStats[pkgName] = minutes;
+          }
+        }
+      });
+
+      return processedStats;
+    } catch (e, stackTrace) {
+      // Diagnostic logging to reveal any hidden underlying channel issues
+      print("UsageService Exception caught: $e");
+      print("Stacktrace: $stackTrace");
       return {};
     }
   }
