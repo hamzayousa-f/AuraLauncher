@@ -173,31 +173,33 @@ class MainActivity: FlutterActivity() {
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Android's INTERVAL_DAILY requires a broad window to ensure it hits the current system bucket.
-                // We look back 24 hours from right now to capture the current active daily bucket safely.
-                val now = System.currentTimeMillis()
-                val broadStartTime = now - (1000 * 60 * 60 * 24)
-
-                val usageStats = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, broadStartTime, now
-                )
-
-                // Calculate a strict local midnight timestamp for manual filtering
-                val localMidnight = Calendar.getInstance().apply {
+                // Match your original working calendar setup exactly
+                val calendar = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
-                }.timeInMillis
+                }
+                val midnightToday = calendar.timeInMillis
+
+                // Query using the exact intervals that worked before tinkering
+                val usageStats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, midnightToday, System.currentTimeMillis()
+                )
 
                 if (usageStats != null) {
                     for (stat in usageStats) {
-                        // Ensure the app has active time, and that its last usage record
-                        // occurred after today's local midnight.
-                        if (stat.totalTimeInForeground > 0 && stat.lastTimeUsed >= localMidnight) {
+                        if (stat.totalTimeInForeground > 0) {
+                            // Rollover Protection: If the system daily bucket includes stale data from yesterday
+                            // because it hasn't flushed yet, check the last time the bucket recorded an update.
+                            // If the last update timestamp is older than 12:00 AM today, it belongs to yesterday!
+                            if (stat.lastTimeStamp < midnightToday) {
+                                continue
+                            }
+
                             val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
                             if (minutes > 0) {
-                                statsMap[stat.packageName] = maxOf(statsMap[stat.packageName] ?: 0, minutes)
+                                statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
                             }
                         }
                     }
