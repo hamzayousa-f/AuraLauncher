@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/glass_theme.dart';
+import '../../../core/shared/tactile_button.dart';
 
 class BottomDock extends StatelessWidget {
   final VoidCallback onSearchTap;
@@ -15,70 +16,83 @@ class BottomDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        // Bottom Left Corner: Phone App Shortcut
-        GestureDetector(
-          onTap: onPhoneTap,
-          child: GlassTheme.buildGlassPanel(
-            padding: const EdgeInsets.all(16),
-            borderRadius: BorderRadius.circular(50), // Circular glass button
-            child: const Icon(
-              Icons.phone_android_rounded,
-              color: Colors.white,
-              size: 26,
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // Center: Expanded Minimalist Glass Search Bar
-        Expanded(
-          child: GestureDetector(
-            onTap: onSearchTap,
-            child: GlassTheme.buildGlassPanel(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              borderRadius: BorderRadius.circular(30),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.search_rounded,
-                    color: Colors.white.withOpacity(0.6),
-                    size: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Search apps...',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
+    return GlassTheme.buildGlassPanel(
+      borderRadius: BorderRadius.circular(32),
+      padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 24.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // 1. Dialer Action Target
+          TactileButton(
+            onTap: onPhoneTap,
+            borderRadius: BorderRadius.circular(16),
+            child: const Padding(
+              padding: EdgeInsets.all(10.0),
+              child: Icon(
+                Icons.phone_enabled_rounded,
+                color: Colors.white70,
+                size: 24,
               ),
             ),
           ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // Bottom Right Corner: WhatsApp Shortcut
-        GestureDetector(
-          onTap: onWhatsAppTap,
-          child: GlassTheme.buildGlassPanel(
-            padding: const EdgeInsets.all(16),
-            borderRadius: BorderRadius.circular(50), // Circular glass button
-            child: const Icon(
-              Icons.chat_bubble_outline_rounded, // Stand-in icon for WhatsApp
-              color: Colors.white,
-              size: 26,
+          
+          // 2. Central Unified Search Pill
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: TactileButton(
+                onTap: onSearchTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.06),
+                      width: 1.0,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: Colors.white.withOpacity(0.35),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Search apps...',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.35),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ],
+
+          // 3. Communications Hook (WhatsApp)
+          TactileButton(
+            onTap: onWhatsAppTap,
+            borderRadius: BorderRadius.circular(16),
+            child: const Padding(
+              padding: EdgeInsets.all(10.0),
+              child: Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: Colors.white70,
+                size: 24,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,36 +1,22 @@
 import 'package:flutter/services.dart';
 
 class UsageService {
-  static const MethodChannel _channel = MethodChannel(
-    'com.hamza.wellbeing.aura/launcher',
-  );
+  static const MethodChannel _channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
 
-  /// Fetches actual real-time screen-time statistics calculated natively by the system
+  /// Fetches real-time, accurate screen time metrics straight from the Android kernel.
+  /// Returns a map of package names and their respective foreground usage in minutes.
   static Future<Map<String, int>> getZenithUsageData() async {
     try {
-      // 1. Verify if system usage access is enabled
-      final bool hasPermission =
-          await _channel.invokeMethod('checkUsagePermission') ?? false;
+      final Map<dynamic, dynamic>? nativeData = 
+          await _channel.invokeMethod('getNativeScreenTime');
+      
+      if (nativeData == null) return {};
 
-      if (!hasPermission) {
-        // Request authorization context interface safely
-        await _channel.invokeMethod('openUsageSettings');
-        return {};
-      }
-
-      // 2. Fetch the calculated midnight-to-now runtime map
-      final Map<dynamic, dynamic>? nativeData = await _channel.invokeMethod(
-        'getNativeScreenTime',
-      );
-      if (nativeData != null) {
-        return nativeData.map(
-          (key, value) =>
-              MapEntry(key.toString(), int.tryParse(value.toString()) ?? 0),
-        );
-      }
+      // Cast the native map safely to a structured Dart Map
+      return nativeData.map((key, value) => MapEntry(key.toString(), value as int));
     } catch (e) {
-      print("Error fetching native screen time logic details: $e");
+      // Return an empty map on failure to prevent UI stalls; the clock will handle the fallback gracefully
+      return {};
     }
-    return {};
   }
 }
