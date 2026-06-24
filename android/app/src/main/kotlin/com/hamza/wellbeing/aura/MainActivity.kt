@@ -98,7 +98,11 @@ class MainActivity: FlutterActivity() {
                     }
                     // --- NEW NOTIFICATION STREAM CHANNELS ---
                     "getNotificationCount" -> {
-                        result.success(NotificationService.getNotificationCount())
+                        result.success(NotificationService.getActiveNotificationsCount())
+                    }
+                    "getActiveNotifications" -> {
+                        // Bridges the structural metadata array fields perfectly
+                        result.success(NotificationService.getActiveNotificationsData())
                     }
                     "checkNotificationPermission" -> {
                         result.success(isNotificationServiceEnabled())
@@ -269,7 +273,6 @@ class MainActivity: FlutterActivity() {
             } catch (e: Exception) { false }
         }
 
-        // New internal check layer validating listener registration bindings
         private fun isNotificationServiceEnabled(): Boolean {
             val pkgName = packageName
             val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
