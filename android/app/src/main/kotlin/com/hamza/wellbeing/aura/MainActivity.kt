@@ -173,18 +173,30 @@ class MainActivity: FlutterActivity() {
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Query the daily interval. Android internally aligns this to the start of the system's current day.
+                // Android's INTERVAL_DAILY requires a broad window to ensure it hits the current system bucket.
+                // We look back 24 hours from right now to capture the current active daily bucket safely.
+                val now = System.currentTimeMillis()
+                val broadStartTime = now - (1000 * 60 * 60 * 24)
+
                 val usageStats = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, startTime, endTime
+                    UsageStatsManager.INTERVAL_DAILY, broadStartTime, now
                 )
+
+                // Calculate a strict local midnight timestamp for manual filtering
+                val localMidnight = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
 
                 if (usageStats != null) {
                     for (stat in usageStats) {
-                        // If the app has foreground time in today's bucket, pull it in.
-                        if (stat.totalTimeInForeground > 0) {
+                        // Ensure the app has active time, and that its last usage record
+                        // occurred after today's local midnight.
+                        if (stat.totalTimeInForeground > 0 && stat.lastTimeUsed >= localMidnight) {
                             val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
                             if (minutes > 0) {
-                                // Use maxOf to handle duplicate package entries if Android splits system tasks
                                 statsMap[stat.packageName] = maxOf(statsMap[stat.packageName] ?: 0, minutes)
                             }
                         }
