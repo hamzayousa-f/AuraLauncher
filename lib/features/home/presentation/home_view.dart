@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../../core/shared/tactile_button.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
@@ -23,8 +25,8 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   List<Map<String, String>> _pinnedAppsList = [];
   List<AuraAppModel> _cachedSystemApps = [];
   
-  String _wallpaperType = 'asset';
-  String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
+  String _wallpaperType = 'solid';
+  String _wallpaperPath = '0xFF0A0A0A';
 
   @override
   void initState() {
@@ -73,8 +75,8 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
       _usageStats = stats;
       _cachedSystemApps = systemApps;
       _pinnedAppsList = temporaryPinsList;
-      _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
-      _wallpaperPath = prefs.getString('wallpaper_path') ?? 'assets/wallpapers/default_noir.jpg';
+      _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
+      _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
     });
   }
 
@@ -87,6 +89,103 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     _loadHomeState();
   }
 
+  void _showWallpaperPickerSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      builder: (context) {
+        return GlassTheme.buildGlassPanel(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(32),
+            topRight: Radius.circular(32),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "Workspace Canvas",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Option 1: Open Phone Storage Gallery Picker
+              TactileButton(
+                onTap: () async {
+                  final ImagePicker picker = ImagePicker();
+                  final XFile? image = await picker.pickImage(
+                    source: ImageSource.gallery,
+                    imageQuality: 100,
+                  );
+
+                  if (image != null) {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString('wallpaper_type', 'file');
+                    await prefs.setString('wallpaper_path', image.path);
+                    
+                    if (context.mounted) Navigator.pop(context);
+                    _loadHomeState();
+                  }
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.photo_library_rounded, color: Colors.cyanAccent, size: 20),
+                      SizedBox(width: 16),
+                      Text("Open System Gallery", style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              // Option 2: Clean Obsidian Void
+              TactileButton(
+                onTap: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('wallpaper_type', 'solid');
+                  await prefs.setString('wallpaper_path', '0xFF0A0A0A');
+                  if (context.mounted) Navigator.pop(context);
+                  _loadHomeState();
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.blur_on_rounded, color: Colors.white30, size: 20),
+                      SizedBox(width: 16),
+                      Text("Solid Obsidian Void", style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Color _getUsageColor(int minutes) {
     if (minutes >= 120) return Colors.redAccent.withOpacity(0.85);
     if (minutes >= 60) return Colors.amberAccent.withOpacity(0.85);
@@ -96,11 +195,9 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevents system back gestures from popping/reloading the home launcher
+      canPop: false, // Prevents system back gesture from killing or flashing home activity
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-
-        // Micro-Routing: If search drawer is open, back gesture elegantly closes it first
         if (_isSearchOpen) {
           setState(() => _isSearchOpen = false);
         }
@@ -120,10 +217,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
             children: [
               WallpaperBackground(
                 onLongPressHome: () {
-                  // Trigger a gentle haptic buzz on long-press
                   Feedback.forLongPress(context);
-                  
-                  // Open your visual customizer drawer or bottom sheet
                   _showWallpaperPickerSheet(context);
                 }, 
                 wallpaperType: _wallpaperType,
@@ -202,11 +296,11 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                       decoration: BoxDecoration(
                                         color: Colors.redAccent.withOpacity(0.08),
                                         borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: const Icon(
-                                      Icons.label_off_rounded, 
-                                      color: Colors.redAccent, 
-                                      size: 18
+                                      ),
+                                      child: const Icon(
+                                        Icons.label_off_rounded, 
+                                        color: Colors.redAccent, 
+                                        size: 18
                                       ),
                                     ),
                                     child: Padding(
@@ -239,7 +333,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                 Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 20.0),
                                   child: Text(
-                                    "Swipe down or tap Search to curate your focus layout",
+                                    "Long-press workspace to set wallpaper. Swipe down to focus apps.",
                                     style: TextStyle(
                                       color: Colors.white.withOpacity(0.2), 
                                       fontSize: 11, 
@@ -299,7 +393,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     );
     final String base64Icon = appMatch['icon'] ?? '';
 
-    // Studio-Grade custom luminance matrix matching premium minimalist setups
     const List<double> grayscaleMatrix = <double>[
       0.21, 0.72, 0.07, 0, 0,
       0.21, 0.72, 0.07, 0, 0,
@@ -314,7 +407,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
         child: Row(
           children: [
-            // Icon Nest with Grayscale Masking
             SizedBox(
               width: 20,
               height: 20,
@@ -332,8 +424,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                       : Icon(iconData, color: Colors.white30, size: 18),
             ),
             const SizedBox(width: 16),
-            
-            // Clean Monospace Typographic Contrast
             Expanded(
               child: Text(
                 appName,
@@ -346,8 +436,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            
-            // Subtle metric timestamp
             Text(
               displayTime,
               style: TextStyle(
@@ -361,102 +449,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
           ],
         ),
       ),
-    );
-  }
-  void _showWallpaperPickerSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black54,
-      isScrollControlled: true,
-      builder: (context) {
-        return GlassTheme.buildGlassPanel(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(32),
-            topRight: Radius.circular(32),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                "Interface Canvas",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Select a background matrix for your focus workspace",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.4),
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              
-              // Option 1: Minimalist Solid Dark
-              TactileButton(
-                onTap: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('wallpaper_type', 'solid');
-                  await prefs.setString('wallpaper_path', '0xFF0A0A0A');
-                  Navigator.pop(context);
-                  _loadHomeState();
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.lens, color: Colors.white30, size: 20),
-                      SizedBox(width: 16),
-                      Text("Solid Obsidian Noir", style: TextStyle(color: Colors.white70, fontSize: 14)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Option 2: Default Image Asset
-              TactileButton(
-                onTap: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('wallpaper_type', 'asset');
-                  await prefs.setString('wallpaper_path', 'assets/wallpapers/default_noir.jpg');
-                  Navigator.pop(context);
-                  _loadHomeState();
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.image_outlined, color: Colors.white30, size: 20),
-                      SizedBox(width: 16),
-                      Text("Default Cinematic Asset", style: TextStyle(color: Colors.white70, fontSize: 14)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
     );
   }
 }
