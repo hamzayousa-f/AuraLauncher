@@ -21,7 +21,7 @@ class _HomeViewState extends State<HomeView> {
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
   List<AuraAppModel> _cachedSystemApps = [];
-
+  
   String _wallpaperType = 'asset';
   String _wallpaperPath = 'assets/wallpapers/default_noir.jpg';
 
@@ -34,20 +34,20 @@ class _HomeViewState extends State<HomeView> {
   Future<void> _loadHomeState() async {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
-
+    
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
     List<Map<String, String>> temporaryPinsList = [];
     for (String pkg in savedPins) {
       final match = systemApps.firstWhere(
-        (app) => app.packageName == pkg,
-        orElse: () => AuraAppModel(name: 'App', packageName: pkg),
+        (app) => app.packageName == pkg, 
+        orElse: () => AuraAppModel(name: 'App', packageName: pkg)
       );
       temporaryPinsList.add({
         'name': match.name,
         'package': pkg,
-        'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '',
+        'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '', 
       });
     }
 
@@ -56,9 +56,7 @@ class _HomeViewState extends State<HomeView> {
       _cachedSystemApps = systemApps;
       _pinnedAppsList = temporaryPinsList;
       _wallpaperType = prefs.getString('wallpaper_type') ?? 'asset';
-      _wallpaperPath =
-          prefs.getString('wallpaper_path') ??
-          'assets/wallpapers/default_noir.jpg';
+      _wallpaperPath = prefs.getString('wallpaper_path') ?? 'assets/wallpapers/default_noir.jpg';
     });
   }
 
@@ -67,58 +65,8 @@ class _HomeViewState extends State<HomeView> {
     List<String> savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
     savedPins.remove(packageName);
     await prefs.setStringList('pinned_custom_apps', savedPins);
-
+    
     _loadHomeState();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('App unpinned from home view')),
-      );
-    }
-  }
-
-  void _showUnpinDialog(String appName, String packageName) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return GlassTheme.buildGlassPanel(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Manage $appName',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(
-                  Icons.label_off_rounded,
-                  color: Colors.redAccent,
-                ),
-                title: const Text(
-                  'Unpin from Home Screen',
-                  style: TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _unpinApp(packageName);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Color _getUsageColor(int minutes) {
@@ -134,8 +82,7 @@ class _HomeViewState extends State<HomeView> {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onVerticalDragEnd: (details) {
-          if (details.primaryVelocity != null &&
-              details.primaryVelocity! > 350) {
+          if (details.primaryVelocity != null && details.primaryVelocity! > 350) {
             if (!_isSearchOpen) {
               setState(() {
                 _isSearchOpen = true;
@@ -146,39 +93,37 @@ class _HomeViewState extends State<HomeView> {
         child: Stack(
           children: [
             WallpaperBackground(
-              onLongPressHome: () {},
+              onLongPressHome: () {}, 
               wallpaperType: _wallpaperType,
               wallpaperPath: _wallpaperPath,
               child: SafeArea(
-                // Keep it safe from system notches and nav bars
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20.0,
-                    vertical: 12.0,
-                  ), // Defensive vertical sizing
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       const SizedBox(height: 20),
                       const GlassClock(),
-
+                      
                       const Spacer(),
-
+                      
                       GlassTheme.buildGlassPanel(
                         borderRadius: BorderRadius.circular(24),
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _buildTitleAppRow(
-                              appName: 'Zenith',
-                              packageName: 'com.hamza.wellbeing.zenith',
-                              isPermanent: true,
-                              iconData: Icons.hourglass_empty_rounded,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: _buildTitleAppRow(
+                                appName: 'Zenith',
+                                packageName: 'com.hamza.wellbeing.zenith',
+                                isPermanent: true,
+                                iconData: Icons.hourglass_empty_rounded,
+                              ),
                             ),
-
-                            if (_pinnedAppsList.isNotEmpty)
-                              const Divider(color: Colors.white10, height: 12),
+                            
+                            if (_pinnedAppsList.isNotEmpty) const Divider(color: Colors.white10, height: 12),
 
                             ListView.builder(
                               shrinkWrap: true,
@@ -187,20 +132,52 @@ class _HomeViewState extends State<HomeView> {
                               itemCount: _pinnedAppsList.length,
                               itemBuilder: (context, index) {
                                 final app = _pinnedAppsList[index];
-                                return Column(
-                                  children: [
-                                    if (index > 0)
-                                      const Divider(
-                                        color: Colors.white10,
-                                        height: 12,
-                                      ),
-                                    _buildTitleAppRow(
-                                      appName: app['name']!,
-                                      packageName: app['package']!,
-                                      isPermanent: false,
-                                      iconData: Icons.android_rounded,
+                                final String pkgName = app['package']!;
+
+                                // Wrap user custom apps in a fluid Swipe-to-Dismiss action container
+                                return Dismissible(
+                                  key: Key(pkgName),
+                                  direction: DismissDirection.endToStart, // Swipe right-to-left
+                                  onDismissed: (direction) async {
+                                    final String removedAppName = app['name']!;
+                                    await _unpinApp(pkgName);
+                                    
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).clearSnackBars();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Unpinned $removedAppName'),
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  background: Container(
+                                    alignment: Alignment.centerRight,
+padding: const EdgeInsets.only(right: 24.0),                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                                  ],
+                                    child: const Icon(
+                                      Icons.label_off_rounded, 
+                                      color: Colors.redAccent, 
+                                      size: 20
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    child: Column(
+                                      children: [
+                                        if (index > 0) const Divider(color: Colors.white10, height: 12),
+                                        _buildTitleAppRow(
+                                          appName: app['name']!,
+                                          packageName: pkgName,
+                                          isPermanent: false,
+                                          iconData: Icons.android_rounded,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 );
                               },
                             ),
@@ -208,25 +185,19 @@ class _HomeViewState extends State<HomeView> {
                             if (_pinnedAppsList.isEmpty) ...[
                               const Divider(color: Colors.white10, height: 12),
                               Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0,
-                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 12.0),
                                 child: Text(
                                   "Swipe down anywhere or tap Search to begin",
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.25),
-                                    fontSize: 11,
-                                    fontStyle: FontStyle.italic,
-                                  ),
+                                  style: TextStyle(color: Colors.white.withOpacity(0.25), fontSize: 11, fontStyle: FontStyle.italic),
                                 ),
                               ),
-                            ],
+                            ]
                           ],
                         ),
                       ),
 
                       const SizedBox(height: 20),
-
+                      
                       BottomDock(
                         onSearchTap: () => setState(() => _isSearchOpen = true),
                         onPhoneTap: () => LauncherService.launchPhoneDialer(),
@@ -260,46 +231,27 @@ class _HomeViewState extends State<HomeView> {
   }) {
     final int minutes = _usageStats[packageName] ?? 0;
     final Color usageColor = _getUsageColor(minutes);
-    final String displayTime = minutes >= 60
+    final String displayTime = minutes >= 60 
         ? '${(minutes / 60).floor()}h ${minutes % 60}m'
         : '${minutes}m';
 
     final appMatch = _pinnedAppsList.firstWhere(
-      (element) => element['package'] == packageName,
-      orElse: () => {},
+      (element) => element['package'] == packageName, 
+      orElse: () => {}
     );
     final String base64Icon = appMatch['icon'] ?? '';
 
     const List<double> grayscaleMatrix = <double>[
-      0.2126,
-      0.7152,
-      0.0722,
-      0,
-      0,
-      0.2126,
-      0.7152,
-      0.0722,
-      0,
-      0,
-      0.2126,
-      0.7152,
-      0.0722,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1,
-      0,
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0.2126, 0.7152, 0.0722, 0, 0,
+      0,      0,      0,      1, 0,
     ];
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => LauncherService.launchApp(packageName),
-        onLongPress: isPermanent
-            ? null
-            : () => _showUnpinDialog(appName, packageName),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
@@ -309,20 +261,13 @@ class _HomeViewState extends State<HomeView> {
                 width: 24,
                 height: 24,
                 child: isPermanent
-                    ? Icon(
-                        iconData,
-                        color: Colors.cyanAccent.withOpacity(0.8),
-                        size: 22,
-                      )
-                    : base64Icon.isNotEmpty
-                    ? ColorFiltered(
-                        colorFilter: const ColorFilter.matrix(grayscaleMatrix),
-                        child: Image.memory(
-                          base64Decode(base64Icon),
-                          fit: BoxFit.contain,
-                        ),
-                      )
-                    : Icon(iconData, color: Colors.white70, size: 22),
+                    ? Icon(iconData, color: Colors.cyanAccent.withOpacity(0.8), size: 22)
+                    : base64Icon.isNotEmpty 
+                        ? ColorFiltered(
+                            colorFilter: const ColorFilter.matrix(grayscaleMatrix),
+                            child: Image.memory(base64Decode(base64Icon), fit: BoxFit.contain),
+                          )
+                        : Icon(iconData, color: Colors.white70, size: 22),
               ),
               const SizedBox(width: 16),
               Expanded(
