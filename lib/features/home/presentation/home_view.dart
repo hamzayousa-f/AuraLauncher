@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -195,7 +196,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevents system back gesture from killing or flashing home activity
+      canPop: false, 
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_isSearchOpen) {
@@ -232,6 +233,15 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                         const GlassClock(),
                         
                         const Spacer(),
+
+                        // Frosted Glass Notification Stream Icon
+                        NotificationBell(
+                          onTap: () {
+                            debugPrint("Aura Core: Open glass notification folder view overlay.");
+                          },
+                        ),
+                        
+                        const SizedBox(height: 20),
                         
                         // Core Pinned Container with Premium Specular Borders
                         GlassTheme.buildGlassPanel(
