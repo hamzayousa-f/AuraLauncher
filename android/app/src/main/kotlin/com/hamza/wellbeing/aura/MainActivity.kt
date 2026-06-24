@@ -173,7 +173,7 @@ class MainActivity: FlutterActivity() {
 
                 val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-                // Match your original working calendar setup exactly
+                // Calculate strict local midnight
                 val calendar = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -181,25 +181,21 @@ class MainActivity: FlutterActivity() {
                     set(Calendar.MILLISECOND, 0)
                 }
                 val midnightToday = calendar.timeInMillis
+                val now = System.currentTimeMillis()
 
-                // Query using the exact intervals that worked before tinkering
-                val usageStats = usageStatsManager.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, midnightToday, System.currentTimeMillis()
-                )
+                // queryAndAggregateUsageStats returns a combined Map<String, UsageStats>
+                // strictly for the time window provided, bypassing individual interval bucket glitches.
+                val aggregatedStats = usageStatsManager.queryAndAggregateUsageStats(midnightToday, now)
 
-                if (usageStats != null) {
-                    for (stat in usageStats) {
+                if (aggregatedStats != null && aggregatedStats.isNotEmpty()) {
+                    for ((packageName, stat) in aggregatedStats) {
                         if (stat.totalTimeInForeground > 0) {
-                            // Rollover Protection: If the system daily bucket includes stale data from yesterday
-                            // because it hasn't flushed yet, check the last time the bucket recorded an update.
-                            // If the last update timestamp is older than 12:00 AM today, it belongs to yesterday!
-                            if (stat.lastTimeStamp < midnightToday) {
-                                continue
-                            }
-
-                            val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
-                            if (minutes > 0) {
-                                statsMap[stat.packageName] = (statsMap[stat.packageName] ?: 0) + minutes
+                            // Double check that the app was actually touched today
+                            if (stat.lastTimeUsed >= midnightToday || stat.lastTimeStamp >= midnightToday) {
+                                val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
+                                if (minutes > 0) {
+                                    statsMap[packageName] = minutes
+                                }
                             }
                         }
                     }
