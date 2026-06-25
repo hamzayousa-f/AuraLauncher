@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/home/widgets/notification_center_panel.dart';
+import 'package:aura/features/home/widgets/tiling_dashboard.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -283,15 +284,15 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10.0),
-                                child: _buildTitleAppRow(
-                                  appName: 'Zenith Dashboard',
-                                  packageName: 'com.hamza.wellbeing.zenith',
-                                  isPermanent: true,
-                                  iconData: Icons.blur_on_rounded,
-                                ),
-                              ),
+                             Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 10.0),
+  child: TilingDashboard(
+    usageStats: _usageStats,
+    notificationCount: 0, // We will bridge your native notificationCount channel variable here next
+    batteryLevel: 85,     // We will wire your battery map data stream down here
+    isCharging: false,
+  ),
+),
                               
                               if (_pinnedAppsList.isNotEmpty) 
                                 Padding(
