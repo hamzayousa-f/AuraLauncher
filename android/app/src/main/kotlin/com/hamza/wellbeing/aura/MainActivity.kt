@@ -16,13 +16,17 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.Calendar
-import android.app.usage.UsageEvents // Add this line
+import android.app.usage.UsageEvents
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import java.lang.reflect.Method
 import java.util.Locale
 import org.json.JSONArray
 
@@ -70,6 +74,17 @@ class MainActivity: FlutterActivity() {
 
                         result.success(getDeviceScreenTimeMinutes(startTime, endTime))
                     }
+                    "getTotalSystemScreenTime" -> {
+                        result.success(computeAbsoluteScreenTimeMinutes())
+                    }
+                    "expandQuickSettings" -> {
+                        expandNotificationPanel()
+                        result.success(null)
+                    }
+                    "turnOffScreen" -> {
+                        triggerScreenLock()
+                        result.success(null)
+                    }
                     "getBatteryStatus" -> {
                         val batteryStatus: Intent? = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                         val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -97,10 +112,6 @@ class MainActivity: FlutterActivity() {
                         )
                         result.success(data)
                     }
-                    "getTotalSystemScreenTime" -> {
-                        result.success(computeAbsoluteScreenTimeMinutes())
-                    }
-                    // --- NEW NOTIFICATION STREAM CHANNELS ---
                     "getNotificationCount" -> {
                         result.success(NotificationService.getActiveNotificationsCount())
                     }
@@ -240,7 +251,6 @@ class MainActivity: FlutterActivity() {
                 while (events.hasNextEvent()) {
                     events.getNextEvent(event)
 
-                    // Using the fully qualified class names if needed, but import should fix it
                     if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
                         if (currentActivePackage != null && lastEventTime > 0) {
                             val duration = event.timeStamp - lastEventTime
@@ -271,6 +281,39 @@ class MainActivity: FlutterActivity() {
                 }
 
                 return (totalForegroundMs / (1000 * 60)).toInt().coerceAtLeast(0)
+        }
+
+        private fun expandNotificationPanel() {
+            try {
+                val statusBarService = getSystemService("statusbar")
+                val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
+                val method: Method = statusBarManagerClass.getMethod("expandSettingsPanel")
+                method.invoke(statusBarService)
+            } catch (e: Exception) {
+                try {
+                    val statusBarService = getSystemService("statusbar")
+                    val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
+                    val method: Method = statusBarManagerClass.getMethod("expandNotificationsPanel")
+                    method.invoke(statusBarService)
+                } catch (ex: Exception) {
+                    Log.e("AuraLauncher", "Notification channel expansion failure", ex)
+                }
+            }
+        }
+
+        private fun triggerScreenLock() {
+            val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminComponent = ComponentName(this, AuraAdminReceiver::class.java)
+
+            if (devicePolicyManager.isAdminActive(adminComponent)) {
+                devicePolicyManager.lockNow()
+            } else {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Aura needs permission to lock the screen on double-tap.")
+                }
+                startActivity(intent)
+            }
         }
 
         private fun fetchInstalledApplications(): List<Map<String, Any>> {

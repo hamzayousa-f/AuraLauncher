@@ -277,13 +277,29 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         resizeToAvoidBottomInset: false,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
+          // 1. Double Tap to Lock Screen
+          onDoubleTap: () async {
+            try {
+              const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
+              await channel.invokeMethod('turnOffScreen');
+            } catch (e) {
+              debugPrint("Failed to lock screen: $e");
+            }
+          },
+          // 2. Swipes tracking for Search and Quick Settings
           onVerticalDragEnd: (details) {
-            if (details.primaryVelocity != null && details.primaryVelocity! > 350) {
-              if (!_isSearchOpen) {
-                setState(() => _isSearchOpen = true);
+            if (details.primaryVelocity != null) {
+              // Swipe Down (Positive velocity) -> Expand Quick Settings panel
+              if (details.primaryVelocity! > 350) {
+                const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
+                channel.invokeMethod('expandQuickSettings');
+              } 
+              // Swipe Up (Negative velocity) -> Open search focus container overlay
+              else if (details.primaryVelocity! < -350) {
+                if (!_isSearchOpen) {
+                  setState(() => _isSearchOpen = true);
+                }
               }
-            } else if (details.primaryVelocity != null && details.primaryVelocity! < -350) {
-              _loadHomeState(); // Force-refresh system stats on manual swipe pulls!
             }
           },
           child: Stack(
