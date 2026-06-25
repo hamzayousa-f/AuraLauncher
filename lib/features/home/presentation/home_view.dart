@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/services.dart'; // <-- ADD THIS LINE HERE
+import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/home/widgets/notification_center_panel.dart';
@@ -32,6 +32,11 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   String _wallpaperType = 'solid';
   String _wallpaperPath = '0xFF0A0A0A';
 
+  int _notificationCount = 0;
+  int _batteryLevel = 100;
+  bool _isCharging = false;
+  int _totalSystemScreenTime = 0; // The missing clean absolute SOT tracking field
+
   @override
   void initState() {
     super.initState();
@@ -52,23 +57,23 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     }
   }
 
- int _notificationCount = 0;
-  int _batteryLevel = 100;
-  bool _isCharging = false;
-
   Future<void> _loadHomeState() async {
     final stats = await UsageService.getZenithUsageData();
     final prefs = await SharedPreferences.getInstance();
     
-    // 1. Fetch live native system values
     int nativeNotifications = 0;
     int nativeBattery = 100;
     bool nativeCharging = false;
+    int nativeTotalScreenTime = 0;
 
     try {
-      // Invoke your native MainActivity methods
       const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
       
+      // 1. Fetch the absolute system runtime screen time directly from your updated MainActivity.kt
+      final int? systemSot = await channel.invokeMethod<int>('getTotalSystemScreenTime');
+      if (systemSot != null) nativeTotalScreenTime = systemSot;
+
+      // 2. Fetch battery health charging matrix profiles
       final Map<dynamic, dynamic>? batteryData = 
           await channel.invokeMethod<Map<dynamic, dynamic>>('getBatteryStatus');
       if (batteryData != null) {
@@ -76,7 +81,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         nativeCharging = batteryData['isCharging'] ?? false;
       }
 
-      // If your method channel name for count matches:
+      // 3. Fetch count status from system notification listener channels
       final int? count = await channel.invokeMethod<int>('getNotificationCount');
       if (count != null) nativeNotifications = count;
     } catch (e) {
@@ -85,6 +90,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
 
     setState(() {
       _usageStats = stats;
+      _totalSystemScreenTime = nativeTotalScreenTime;
       _batteryLevel = nativeBattery;
       _isCharging = nativeCharging;
       _notificationCount = nativeNotifications;
@@ -92,7 +98,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
       _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
     });
 
-    // 2. Offload heavy package and icon scanning away from critical rendering startup
+    // Offload heavy package list scans to protect render framework performance pipelines
     Future.microtask(() async {
       final systemApps = await LauncherService.getInstalledApps();
       final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
@@ -242,7 +248,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
           return const NotificationCenterPanel();
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          // Native Android QS Panel style sliding ease-down transition
           return SlideTransition(
             position: Tween<Offset>(
               begin: const Offset(0, -0.08), 
@@ -269,7 +274,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        resizeToAvoidBottomInset: false, // <-- ADD THIS LINE
+        resizeToAvoidBottomInset: false,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onVerticalDragEnd: (details) {
@@ -277,6 +282,8 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
               if (!_isSearchOpen) {
                 setState(() => _isSearchOpen = true);
               }
+            } else if (details.primaryVelocity != null && details.primaryVelocity! < -350) {
+              _loadHomeState(); // Force-refresh system stats on manual swipe pulls!
             }
           },
           child: Stack(
@@ -299,7 +306,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                         
                         const Spacer(),
 
-                        // Pinned cleanly to the left margin with exact listener hook configurations
                         Align(
                           alignment: Alignment.centerLeft,
                           child: NotificationBell(onTap: _openNotificationTray),
@@ -307,22 +313,23 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                         
                         const SizedBox(height: 14),
                         
-                        // Core Pinned Container with Premium Specular Borders
+                        // Glass Layout Container with Dashboard Inside
                         GlassTheme.buildGlassPanel(
                           borderRadius: BorderRadius.circular(28),
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                             Padding(
-  padding: const EdgeInsets.symmetric(horizontal: 10.0),
-  child: TilingDashboard(
-    usageStats: _usageStats,
-    notificationCount: _notificationCount, // Live native notifications count
-    batteryLevel: _batteryLevel,           // Live native battery metric
-    isCharging: _isCharging,               // Live charging status indicator
-  ),
-),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                                child: TilingDashboard(
+                                  usageStats: _usageStats,
+                                  totalSystemMinutes: _totalSystemScreenTime, // Connects raw non-overlapping total minutes
+                                  notificationCount: _notificationCount,
+                                  batteryLevel: _batteryLevel,
+                                  isCharging: _isCharging,
+                                ),
+                              ),
                               
                               if (_pinnedAppsList.isNotEmpty) 
                                 Padding(
@@ -365,8 +372,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                       }
                                     },
                                     background: Container(
-                                      alignment: Alignment.centerRight,
-                                      padding: const EdgeInsets.only(right: 28.0),
+alignment: Alignment.centerRight,                                      padding: const EdgeInsets.only(right: 28.0),
                                       decoration: BoxDecoration(
                                         color: Colors.redAccent.withOpacity(0.08),
                                         borderRadius: BorderRadius.circular(20),
