@@ -9,21 +9,35 @@ class NotificationService : NotificationListenerService() {
     companion object {
         private var instance: NotificationService? = null
 
-            fun getActiveNotificationsData(): List<Map<String, String>> {
-                val dataList = mutableListOf<Map<String, String>>()
-                instance?.activeNotifications?.forEach { sbn ->
-                    val extras = sbn.notification.extras
-                    val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-                    val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+            fun getActiveNotificationsCount(): Int {
+                return instance?.activeNotifications?.size ?: 0
+            }
 
-                    if (title.isNotEmpty() || text.isNotEmpty()) {
-                        val map = mapOf(
-                            "packageName" to sbn.packageName,
-                            "title" to title,
-                            "text" to text
-                        )
-                        dataList.add(map)
+            fun getActiveNotificationsData(): List<HashMap<String, String>> {
+                val dataList = ArrayList<HashMap<String, String>>()
+                val currentInstance = instance ?: return dataList
+
+                try {
+                    val activeNotifications = currentInstance.activeNotifications
+                    if (activeNotifications != null) {
+                        for (sbn in activeNotifications) {
+                            val extras = sbn.notification?.extras
+                            if (extras != null) {
+                                val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+                                val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+
+                                if (title.isNotEmpty() || text.isNotEmpty()) {
+                                    val map = HashMap<String, String>()
+                                    map["packageName"] = sbn.packageName ?: ""
+                                    map["title"] = title
+                                    map["text"] = text
+                                    dataList.add(map)
+                                }
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    // Fail-safe graceful fallback for compilation or runtime security blocks
                 }
                 return dataList
             }
