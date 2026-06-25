@@ -51,9 +51,18 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   }
 
   Future<void> _loadHomeState() async {
-    final stats = await UsageService.getZenithUsageData();
-    final prefs = await SharedPreferences.getInstance();
-    
+  // 1. Fetch lightweight usage data instantly to keep UI responsive
+  final stats = await UsageService.getZenithUsageData();
+  final prefs = await SharedPreferences.getInstance();
+  
+  setState(() {
+    _usageStats = stats;
+    _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
+    _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
+  });
+
+  // 2. Offload heavy package and icon scanning away from critical rendering startup
+  Future.microtask(() async {
     final systemApps = await LauncherService.getInstalledApps();
     final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
 
@@ -73,14 +82,14 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
       });
     }
 
-    setState(() {
-      _usageStats = stats;
-      _cachedSystemApps = systemApps;
-      _pinnedAppsList = temporaryPinsList;
-      _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
-      _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
-    });
-  }
+    if (mounted) {
+      setState(() {
+        _cachedSystemApps = systemApps;
+        _pinnedAppsList = temporaryPinsList;
+      });
+    }
+  });
+}
 
   Future<void> _unpinApp(String packageName) async {
     final prefs = await SharedPreferences.getInstance();
@@ -229,6 +238,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: false, // <-- ADD THIS LINE
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onVerticalDragEnd: (details) {
