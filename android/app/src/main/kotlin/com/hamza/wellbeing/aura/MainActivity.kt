@@ -37,7 +37,6 @@ class MainActivity: FlutterActivity() {
         override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
             super.configureFlutterEngine(flutterEngine)
 
-            // Register system receiver to catch uninstalled packages in real-time
             registerUninstallReceiver()
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
@@ -62,7 +61,8 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    "getAppUsageStats", "getNativeScreenTime" -> {
+                    // FIXED: Handled the distinct method name used by UsageService to avoid missing channel data pipelines
+                    "getAppUsageStats", "getNativeScreenTime", "getZenithUsageData" -> {
                         val startTime = call.argument<Long>("startTime") ?: Calendar.getInstance().apply {
                             set(Calendar.HOUR_OF_DAY, 0)
                             set(Calendar.MINUTE, 0)
@@ -140,8 +140,6 @@ class MainActivity: FlutterActivity() {
                         if (intent?.action == Intent.ACTION_PACKAGE_FULLY_REMOVED) {
                             val dataUri = intent.data
                             val packageName = dataUri?.schemeSpecificPart ?: return
-
-                            // Clean up SharedPreferences data sync layers instantly
                             cleanUpNativePinnedApp(packageName)
                         }
                     }
@@ -178,7 +176,7 @@ class MainActivity: FlutterActivity() {
                     prefs.edit().putString(jsonKey, outputJsonArray.toString()).apply()
                 }
             } catch (e: Exception) {
-                // Handle parsing file boundaries safely
+                // Safe fallback bounds
             }
         }
 
@@ -211,16 +209,18 @@ class MainActivity: FlutterActivity() {
                 val midnightToday = calendar.timeInMillis
                 val now = System.currentTimeMillis()
 
+                // Gather metrics using localized rolling system midnight frames
                 val aggregatedStats = usageStatsManager.queryAndAggregateUsageStats(midnightToday, now)
 
                 if (aggregatedStats != null && aggregatedStats.isNotEmpty()) {
                     for ((packageName, stat) in aggregatedStats) {
-                        if (stat.totalTimeInForeground > 0) {
-                            if (stat.lastTimeUsed >= midnightToday || stat.lastTimeStamp >= midnightToday) {
-                                val minutes = (stat.totalTimeInForeground / (1000 * 60)).toInt()
-                                if (minutes > 0) {
-                                    statsMap[packageName] = minutes
-                                }
+                        val totalMs = stat.totalTimeInForeground
+                        if (totalMs > 0) {
+                            // FIXED: Replaced brittle system time checks with robust rounding logic.
+                            // If an application has foreground runtime today, it will display reliably.
+                            val minutes = if (totalMs in 1..59999) 1 else (totalMs / (1000 * 60)).toInt()
+                            if (minutes > 0) {
+                                statsMap[packageName] = minutes
                             }
                         }
                     }
@@ -285,27 +285,12 @@ class MainActivity: FlutterActivity() {
 
         private fun expandNotificationPanel() {
             try {
-                // First, try accessing the system statusbar service via reflection
                 val statusBarService = getSystemService("statusbar")
                 val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
-
-                // On modern Android/crDroid, standard notifications panel expansion is less heavily restricted
                 val method: Method = statusBarManagerClass.getMethod("expandNotificationsPanel")
                 method.invoke(statusBarService)
             } catch (e: Exception) {
-                try {
-                    // Alternative fallback approach using system reflection commands
-                    val statusBarService = getSystemService("statusbar")
-                    val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
-                    val method: Method = statusBarManagerClass.getMethod("expandSettingsPanel")
-                    method.invoke(statusBarService)
-                } catch (ex: Exception) {
-                    Log.e("AuraLauncher", "Both notification and settings panels are restricted by the OS profile", ex)
-
-                    // Final safety fallback: Send an implicit system intent to collapse/expand panels if supported by the ROM
-                    val closeIntent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
-                    sendBroadcast(closeIntent)
-                }
+                Log.e("AuraLauncher", "Failed to expand notification panel using reflection", e)
             }
         }
 

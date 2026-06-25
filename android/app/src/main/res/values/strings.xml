@@ -1,1 +1,5 @@
-<string name="admin_description">Allows Aura to turn off your screen instantly when you double-tap the wallpaper area.</string>
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aura</string>
+    <string name="admin_description">Allows Aura to turn off your screen instantly when you double-tap the wallpaper area.</string>
+</resources>

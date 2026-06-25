@@ -28,11 +28,15 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
   
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   
   List<AuraAppModel> _filteredApps = [];
   Map<String, int> _searchUsageStats = {};
   List<String> _currentlyPinnedPackages = [];
-  String _lastQuery = ''; // <-- ADD THIS LINE HERE
+  String _lastQuery = '';
+
+  // Cache for computed values
+  final Map<String, _AppDisplayData> _displayDataCache = {};
 
   @override
   void initState() {
@@ -41,7 +45,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
 
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 220),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -49,7 +53,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     );
 
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.08), 
+      begin: const Offset(0.0, 0.06), 
       end: Offset.zero,
     ).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
@@ -58,11 +62,13 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     _animationController.forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
+      if (mounted) {
+        _focusNode.requestFocus();
+        _loadSearchTelemetryAndPins();
+      }
     });
 
     _searchController.addListener(_handleSearchFiltering);
-    _loadSearchTelemetryAndPins();
   }
 
   @override
@@ -70,28 +76,40 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     _searchController.removeListener(_handleSearchFiltering);
     _searchController.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     _animationController.dispose();
+    _displayDataCache.clear();
     super.dispose();
   }
 
   /// Extracts system runtime usage data and pins to render context inline
   Future<void> _loadSearchTelemetryAndPins() async {
     try {
-      final stats = await UsageService.getZenithUsageData();
-      final prefs = await SharedPreferences.getInstance();
+      final results = await Future.wait([
+        UsageService.getZenithUsageData(),
+        SharedPreferences.getInstance(),
+      ]);
+      
+      final stats = results[0] as Map<String, int>;
+      final prefs = results[1] as SharedPreferences;
       final pinned = prefs.getStringList('pinned_custom_apps') ?? [];
       
-      setState(() {
-        _searchUsageStats = stats;
-        _currentlyPinnedPackages = pinned;
-      });
+      if (mounted) {
+        setState(() {
+          _searchUsageStats = stats;
+          _currentlyPinnedPackages = pinned;
+          _displayDataCache.clear(); // Clear cache when data updates
+        });
+      }
     } catch (_) {}
   }
 
   /// Toggles the focus pinning structure via inline haptic pop updates
   Future<void> _togglePinState(String packageName, String appName) async {
+    HapticFeedback.mediumImpact();
+    
     final prefs = await SharedPreferences.getInstance();
-    List<String> pinned = prefs.getStringList('pinned_custom_apps') ?? [];
+    List<String> pinned = List<String>.from(prefs.getStringList('pinned_custom_apps') ?? []);
     
     bool wasPinned = pinned.contains(packageName);
     if (wasPinned) {
@@ -102,24 +120,41 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     
     await prefs.setStringList('pinned_custom_apps', pinned);
     
-    setState(() {
-      _currentlyPinnedPackages = pinned;
-    });
-
     if (mounted) {
+      setState(() {
+        _currentlyPinnedPackages = pinned;
+        _displayDataCache.remove(packageName); // Invalidate cache for this app
+      });
+
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.white10,
+          backgroundColor: Colors.black.withOpacity(0.8),
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: Text(
-            wasPinned ? 'Removed $appName from focus layout' : 'Pinned $appName to workspace home',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          content: Row(
+            children: [
+              Icon(
+                wasPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                color: Colors.cyanAccent.withOpacity(0.8),
+                size: 16,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  wasPinned ? 'Unpinned $appName' : 'Pinned $appName',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
-          duration: const Duration(seconds: 2),
+          duration: const Duration(milliseconds: 1800),
         ),
       );
     }
@@ -128,8 +163,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
   void _handleSearchFiltering() {
     final query = _searchController.text.toLowerCase().trim();
     
-    // If the actual typed characters haven't changed, stop immediately
-    if (query == _lastQuery) return; 
+    if (query == _lastQuery) return;
     _lastQuery = query;
 
     setState(() {
@@ -141,6 +175,11 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
             .toList();
       }
     });
+
+    // Scroll to top when search results change
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
   }
 
   Future<void> _handleDismissal() async {
@@ -149,10 +188,47 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     widget.onClose();
   }
 
+  _AppDisplayData _getDisplayData(AuraAppModel app) {
+    // Return cached data if available
+    if (_displayDataCache.containsKey(app.packageName)) {
+      final cached = _displayDataCache[app.packageName]!;
+      // Update isPinned status as it can change
+      return cached.copyWith(
+        isPinned: _currentlyPinnedPackages.contains(app.packageName),
+      );
+    }
+
+    // Compute and cache
+    final int minutes = _searchUsageStats[app.packageName] ?? 0;
+    final Color usageColor = _getUsageColor(minutes);
+    final String displayTime = _formatTime(minutes);
+    final bool isPinned = _currentlyPinnedPackages.contains(app.packageName);
+
+    final data = _AppDisplayData(
+      usageColor: usageColor,
+      displayTime: displayTime,
+      isPinned: isPinned,
+    );
+
+    _displayDataCache[app.packageName] = data;
+    return data;
+  }
+
   Color _getUsageColor(int minutes) {
-    if (minutes >= 120) return Colors.redAccent.withOpacity(0.85);
-    if (minutes >= 60) return Colors.amberAccent.withOpacity(0.85);
-    return Colors.white38;
+    if (minutes >= 120) return const Color(0xFFFF6B6B);
+    if (minutes >= 60) return const Color(0xFFFFD93D);
+    if (minutes >= 30) return const Color(0xFF6BCB77);
+    return Colors.white24;
+  }
+
+  String _formatTime(int minutes) {
+    if (minutes == 0) return '0m';
+    if (minutes >= 60) {
+      final hours = minutes ~/ 60;
+      final mins = minutes % 60;
+      return mins > 0 ? '${hours}h ${mins}m' : '${hours}h';
+    }
+    return '${minutes}m';
   }
 
   @override
@@ -161,7 +237,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
       0.21, 0.72, 0.07, 0, 0,
       0.21, 0.72, 0.07, 0, 0,
       0.21, 0.72, 0.07, 0, 0,
-      0,    0,    0,    0.5, 0, 
+      0,    0,    0,    0.52, 0, 
     ];
 
     return FadeTransition(
@@ -169,199 +245,181 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
       child: SlideTransition(
         position: _slideAnimation,
         child: Container(
-          color: Colors.black.withOpacity(0.4), // Stays full-screen as backdrop
+          color: Colors.black.withOpacity(0.5),
           child: SafeArea(
             bottom: false,
             child: Padding(
-              // THIS WRAPPER CAPTURES THE KEYBOARD HEIGHT AND DYNAMICALLY SHRINKS THE SCROLLABLE SPACE
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom,
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 0.0),
+                padding: const EdgeInsets.fromLTRB(14.0, 10.0, 14.0, 0.0),
                 child: Column(
                   children: [
+                    // Search Bar
                     Row(
                       children: [
                         Expanded(
                           child: GlassTheme.buildGlassPanel(
-                            borderRadius: BorderRadius.circular(24),
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+                            borderRadius: BorderRadius.circular(26),
+                            padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 3.0),
                             child: TextField(
                               controller: _searchController,
                               focusNode: _focusNode,
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 15,
+                                fontSize: 15.5,
                                 fontWeight: FontWeight.w400,
-                                letterSpacing: 0.1,
+                                letterSpacing: 0.15,
                               ),
-                              cursorColor: Colors.cyanAccent.withOpacity(0.6),
-                              cursorWidth: 1.5,
+                              cursorColor: Colors.cyanAccent.withOpacity(0.7),
+                              cursorWidth: 1.8,
+                              cursorRadius: const Radius.circular(2),
                               decoration: InputDecoration(
-                                hintText: 'Type to scan systems...',
+                                hintText: 'Search apps...',
                                 hintStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.25),
-                                  fontSize: 15,
+                                  color: Colors.white.withOpacity(0.28),
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w400,
                                 ),
                                 border: InputBorder.none,
                                 icon: Icon(
                                   Icons.search_rounded,
-                                  color: Colors.white.withOpacity(0.3),
-                                  size: 18,
+                                  color: Colors.white.withOpacity(0.35),
+                                  size: 20,
                                 ),
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? GestureDetector(
+                                        onTap: () {
+                                          _searchController.clear();
+                                          _focusNode.requestFocus();
+                                        },
+                                        child: Icon(
+                                          Icons.clear_rounded,
+                                          color: Colors.white.withOpacity(0.35),
+                                          size: 18,
+                                        ),
+                                      )
+                                    : null,
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         TactileButton(
                           onTap: _handleDismissal,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(22),
                           child: GlassTheme.buildGlassPanel(
-                            borderRadius: BorderRadius.circular(20),
-                            padding: const EdgeInsets.all(12.0),
+                            borderRadius: BorderRadius.circular(22),
+                            padding: const EdgeInsets.all(13.0),
                             child: const Icon(
                               Icons.close_rounded,
                               color: Colors.white70,
-                              size: 18,
+                              size: 19,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
 
+                    // Results Header
+                    if (_filteredApps.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 6.0),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${_filteredApps.length} ${_filteredApps.length == 1 ? 'app' : 'apps'}',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.4),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const Spacer(),
+                            Icon(
+                              Icons.info_outline_rounded,
+                              color: Colors.white.withOpacity(0.25),
+                              size: 13,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Long press to pin',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.3),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w400,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+
+                    // App List
                     Expanded(
                       child: GlassTheme.buildGlassPanel(
                         borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(28),
-                          topRight: Radius.circular(28),
+                          topLeft: Radius.circular(30),
+                          topRight: Radius.circular(30),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0),
                         child: _filteredApps.isEmpty
                             ? Center(
-                                child: Text(
-                                  'No matching apps found',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.2),
-                                    fontSize: 13,
-                                    letterSpacing: 0.2,
-                                  ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off_rounded,
+                                      color: Colors.white.withOpacity(0.15),
+                                      size: 48,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'No matching apps found',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.25),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Try a different search term',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.15),
+                                        fontSize: 12,
+                                        letterSpacing: 0.1,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               )
                             : ListView.builder(
+                                controller: _scrollController,
                                 itemCount: _filteredApps.length,
-                                itemExtent: 52.0, // <-- ADD THIS LINE HERE
-                                padding: const EdgeInsets.only(top: 8, bottom: 32),
-                                physics: const ClampingScrollPhysics(),
+                                itemExtent: 56.0,
+                                padding: const EdgeInsets.only(top: 6, bottom: 28),
+                                physics: const BouncingScrollPhysics(),
                                 itemBuilder: (context, index) {
                                   final app = _filteredApps[index];
-                                  final bool hasIcon = app.iconBytes != null;
-                                  final bool isPinned = _currentlyPinnedPackages.contains(app.packageName);
-                                  
-                                  final int minutes = _searchUsageStats[app.packageName] ?? 0;
-                                  final Color usageColor = _getUsageColor(minutes);
-                                  final String displayTime = minutes >= 60 
-                                      ? '${(minutes / 60).floor()}h ${minutes % 60}m'
-                                      : '${minutes}m';
-
-                                  return Column(
-                                    children: [
-                                      if (index > 0)
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 14.0),
-                                          child: Divider(
-                                            color: Colors.white.withOpacity(0.03),
-                                            height: 1,
-                                          ),
-                                        ),
-                                      GestureDetector(
-                                        onLongPress: () {
-                                          HapticFeedback.heavyImpact();
-                                          _togglePinState(app.packageName, app.name);
-                                        },
-                                        child: TactileButton(
-                                          onTap: () {
-                                            _focusNode.unfocus();
-                                            LauncherService.launchApp(app.packageName);
-                                          },
-                                          borderRadius: BorderRadius.circular(16),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 14.0,
-                                              vertical: 12.0,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child: hasIcon
-                                                      ? ColorFiltered(
-                                                          colorFilter: const ColorFilter.matrix(grayscaleMatrix),
-                                                          child: Image.memory(
-                                                            app.iconBytes!,
-                                                            fit: BoxFit.contain,
-                                                            filterQuality: FilterQuality.medium,
-                                                          ),
-                                                        )
-                                                      : Icon(
-                                                          Icons.apps_rounded,
-                                                          color: Colors.white.withOpacity(0.3),
-                                                          size: 18,
-                                                      ),
-                                                ),
-                                                const SizedBox(width: 16),
-                                                
-                                                Expanded(
-                                                  child: Row(
-                                                    children: [
-                                                      Flexible(
-                                                        child: Text(
-                                                          app.name,
-                                                          style: TextStyle(
-                                                            color: Colors.white.withOpacity(0.85),
-                                                            fontSize: 15,
-                                                            fontWeight: FontWeight.w400,
-                                                            letterSpacing: -0.1,
-                                                          ),
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                      if (isPinned) ...[
-                                                        const SizedBox(width: 8),
-                                                        Icon(
-                                                          Icons.push_pin_rounded,
-                                                          color: Colors.cyanAccent.withOpacity(0.6),
-                                                          size: 11,
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                                
-                                                Text(
-                                                  displayTime,
-                                                  style: TextStyle(
-                                                    color: usageColor,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w500,
-                                                    letterSpacing: -0.2,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Icon(
-                                                  Icons.chevron_right_rounded,
-                                                  color: Colors.white.withOpacity(0.15),
-                                                  size: 16,
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                  return _AppListItem(
+                                    key: ValueKey(app.packageName),
+                                    app: app,
+                                    displayData: _getDisplayData(app),
+                                    grayscaleMatrix: grayscaleMatrix,
+                                    showDivider: index > 0,
+                                    onTap: () {
+                                      _focusNode.unfocus();
+                                      LauncherService.launchApp(app.packageName);
+                                    },
+                                    onLongPress: () {
+                                      _togglePinState(app.packageName, app.name);
+                                    },
                                   );
                                 },
                               ),
@@ -374,6 +432,161 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
           ),
         ),
       ),
+    );
+  }
+}
+
+// Separate widget for list items to prevent unnecessary rebuilds
+class _AppListItem extends StatelessWidget {
+  final AuraAppModel app;
+  final _AppDisplayData displayData;
+  final List<double> grayscaleMatrix;
+  final bool showDivider;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _AppListItem({
+    super.key,
+    required this.app,
+    required this.displayData,
+    required this.grayscaleMatrix,
+    required this.showDivider,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasIcon = app.iconBytes != null;
+
+    return Column(
+      children: [
+        if (showDivider)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Divider(
+              color: Colors.white.withOpacity(0.04),
+              height: 1,
+              thickness: 0.5,
+            ),
+          ),
+        GestureDetector(
+          onLongPress: onLongPress,
+          child: TactileButton(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 14.0,
+              ),
+              child: Row(
+                children: [
+                  // App Icon
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: hasIcon
+                        ? ColorFiltered(
+                            colorFilter: ColorFilter.matrix(grayscaleMatrix),
+                            child: Image.memory(
+                              app.iconBytes!,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              gaplessPlayback: true,
+                            ),
+                          )
+                        : Icon(
+                            Icons.apps_rounded,
+                            color: Colors.white.withOpacity(0.3),
+                            size: 20,
+                          ),
+                  ),
+                  const SizedBox(width: 14),
+                  
+                  // App Name + Pin Icon
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            app.name,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.88),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: -0.15,
+                              height: 1.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (displayData.isPinned) ...[
+                          const SizedBox(width: 7),
+                          Icon(
+                            Icons.push_pin,
+                            color: Colors.cyanAccent.withOpacity(0.7),
+                            size: 12,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  
+                  // Usage Time
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: displayData.usageColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      displayData.displayTime,
+                      style: TextStyle(
+                        color: displayData.usageColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withOpacity(0.18),
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Data class for cached display information
+class _AppDisplayData {
+  final Color usageColor;
+  final String displayTime;
+  final bool isPinned;
+
+  const _AppDisplayData({
+    required this.usageColor,
+    required this.displayTime,
+    required this.isPinned,
+  });
+
+  _AppDisplayData copyWith({
+    Color? usageColor,
+    String? displayTime,
+    bool? isPinned,
+  }) {
+    return _AppDisplayData(
+      usageColor: usageColor ?? this.usageColor,
+      displayTime: displayTime ?? this.displayTime,
+      isPinned: isPinned ?? this.isPinned,
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'dart:io';
+import 'dart:ui';
 import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/home/widgets/notification_center_panel.dart';
 import 'package:aura/features/home/widgets/tiling_dashboard.dart';
@@ -23,11 +24,19 @@ class HomeView extends StatefulWidget {
   State<HomeView> createState() => _HomeViewState();
 }
 
-class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
+class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  late AnimationController _gestureAnimationController;
+  
+  // Use a ValueNotifier to isolate swipe animations from the main layout tree
+  final ValueNotifier<double> _dragValueNotifier = ValueNotifier<double>(0.0);
+  
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
   List<AuraAppModel> _cachedSystemApps = [];
+  
+  // High-performance image cache memory map to prevent repeated base64 decoding loops
+  final Map<String, Uint8List> _decodedIconCache = {};
   
   String _wallpaperType = 'solid';
   String _wallpaperPath = '0xFF0A0A0A';
@@ -35,97 +44,165 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   int _notificationCount = 0;
   int _batteryLevel = 100;
   bool _isCharging = false;
-  int _totalSystemScreenTime = 0; // The missing clean absolute SOT tracking field
+  int _totalSystemScreenTime = 0;
+  
+  bool _isSyncingMetrics = false;
+  bool _isAppCacheLoaded = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadHomeState();
+    
+    _gestureAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220), 
+    )..addListener(() {
+        _dragValueNotifier.value = _gestureAnimationController.value;
+      });
+    
+    _initialBootSync();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _gestureAnimationController.dispose();
+    _dragValueNotifier.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _loadHomeState();
+      _loadVolatileSystemMetrics();
     }
   }
 
-  Future<void> _loadHomeState() async {
-    final stats = await UsageService.getZenithUsageData();
-    final prefs = await SharedPreferences.getInstance();
-    
-    int nativeNotifications = 0;
-    int nativeBattery = 100;
-    bool nativeCharging = false;
-    int nativeTotalScreenTime = 0;
+  Future<void> _initialBootSync() async {
+    await _loadVolatileSystemMetrics();
+    await _buildAppStructureCache();
+  }
+
+  Future<void> _loadVolatileSystemMetrics() async {
+    if (_isSyncingMetrics) return;
+    _isSyncingMetrics = true;
 
     try {
-      const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
-      
-      // 1. Fetch the absolute system runtime screen time directly from your updated MainActivity.kt
-      final int? systemSot = await channel.invokeMethod<int>('getTotalSystemScreenTime');
-      if (systemSot != null) nativeTotalScreenTime = systemSot;
-
-      // 2. Fetch battery health charging matrix profiles
-      final Map<dynamic, dynamic>? batteryData = 
-          await channel.invokeMethod<Map<dynamic, dynamic>>('getBatteryStatus');
-      if (batteryData != null) {
-        nativeBattery = batteryData['level'] ?? 100;
-        nativeCharging = batteryData['isCharging'] ?? false;
+      // 1. Fetch raw usage data safely with an isolated catch block
+      Map<String, int> stats = {};
+      try {
+        stats = await UsageService.getZenithUsageData();
+      } catch (e) {
+        debugPrint("❌ Aura Error: UsageService.getZenithUsageData() failed: $e");
       }
 
-      // 3. Fetch count status from system notification listener channels
-      final int? count = await channel.invokeMethod<int>('getNotificationCount');
-      if (count != null) nativeNotifications = count;
-    } catch (e) {
-      debugPrint("System Channel Fetch Fail: $e");
-    }
+      final prefs = await SharedPreferences.getInstance();
+      
+      int nativeNotifications = 0;
+      int nativeBattery = 100;
+      bool nativeCharging = false;
+      int nativeTotalScreenTime = 0;
 
-    setState(() {
-      _usageStats = stats;
-      _totalSystemScreenTime = nativeTotalScreenTime;
-      _batteryLevel = nativeBattery;
-      _isCharging = nativeCharging;
-      _notificationCount = nativeNotifications;
-      _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
-      _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
-    });
+      const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
+      
+      // 2. Invoke channels safely one-by-one to prevent one native failure from breaking the others
+      try {
+        final dynamic screenTimeResult = await channel.invokeMethod('getTotalSystemScreenTime');
+        if (screenTimeResult != null) {
+          // Coerce both int and double safely to avoid casting crashes
+          nativeTotalScreenTime = (screenTimeResult as num).toInt();
+        }
+      } catch (e) {
+        debugPrint("❌ Aura Error: Channel 'getTotalSystemScreenTime' failed: $e");
+      }
 
-    // Offload heavy package list scans to protect render framework performance pipelines
-    Future.microtask(() async {
-      final systemApps = await LauncherService.getInstalledApps();
-      final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
+      try {
+        final dynamic batteryData = await channel.invokeMethod('getBatteryStatus');
+        if (batteryData != null && batteryData is Map) {
+          nativeBattery = (batteryData['level'] ?? 100 as num).toInt();
+          nativeCharging = batteryData['isCharging'] ?? false;
+        }
+      } catch (e) {
+        debugPrint("❌ Aura Error: Channel 'getBatteryStatus' failed: $e");
+      }
 
-      List<Map<String, String>> temporaryPinsList = [];
-      for (String pkg in savedPins) {
-        final match = systemApps.firstWhere(
-          (app) => app.packageName == pkg, 
-          orElse: () => AuraAppModel(name: '', packageName: '')
-        );
-        
-        if (match.packageName.isEmpty) continue;
-
-        temporaryPinsList.add({
-          'name': match.name,
-          'package': pkg,
-          'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '', 
-        });
+      try {
+        final dynamic notificationResult = await channel.invokeMethod('getNotificationCount');
+        if (notificationResult != null) {
+          nativeNotifications = (notificationResult as num).toInt();
+        }
+      } catch (e) {
+        debugPrint("❌ Aura Error: Channel 'getNotificationCount' failed: $e");
       }
 
       if (mounted) {
         setState(() {
-          _cachedSystemApps = systemApps;
-          _pinnedAppsList = temporaryPinsList;
+          _usageStats = stats;
+          _totalSystemScreenTime = nativeTotalScreenTime;
+          _batteryLevel = nativeBattery;
+          _isCharging = nativeCharging;
+          _notificationCount = nativeNotifications;
+          _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
+          _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
         });
       }
-    });
+      
+      if (_isAppCacheLoaded) {
+        _mapPinnedAppIcons(prefs);
+      }
+    } catch (globalError) {
+      debugPrint("❌ Aura Error: Global metrics loop broke: $globalError");
+    } finally {
+      _isSyncingMetrics = false;
+    }
+  }
+
+  Future<void> _buildAppStructureCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final systemApps = await LauncherService.getInstalledApps();
+      
+      if (mounted) {
+        setState(() {
+          _cachedSystemApps = systemApps;
+          _isAppCacheLoaded = true;
+        });
+        _mapPinnedAppIcons(prefs);
+      }
+    } catch (e) {
+      debugPrint("Isolated App scanning sequence blocked: $e");
+    }
+  }
+
+  void _mapPinnedAppIcons(SharedPreferences prefs) {
+    final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
+    List<Map<String, String>> temporaryPinsList = [];
+
+    for (String pkg in savedPins) {
+      final match = _cachedSystemApps.firstWhere(
+        (app) => app.packageName == pkg, 
+        orElse: () => AuraAppModel(name: '', packageName: '')
+      );
+      
+      if (match.packageName.isEmpty) continue;
+
+      // Handle raw bytecode translation directly during initialization context instead of build loop
+      if (match.iconBytes != null && !_decodedIconCache.containsKey(pkg)) {
+        _decodedIconCache[pkg] = match.iconBytes!;
+      }
+
+      temporaryPinsList.add({
+        'name': match.name,
+        'package': pkg,
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _pinnedAppsList = temporaryPinsList;
+      });
+    }
   }
 
   Future<void> _unpinApp(String packageName) async {
@@ -133,8 +210,9 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     List<String> savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
     savedPins.remove(packageName);
     await prefs.setStringList('pinned_custom_apps', savedPins);
+    _decodedIconCache.remove(packageName);
     
-    _loadHomeState();
+    _mapPinnedAppIcons(prefs);
   }
 
   void _showWallpaperPickerSheet(BuildContext context) {
@@ -187,7 +265,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                     await prefs.setString('wallpaper_path', image.path);
                     
                     if (context.mounted) Navigator.pop(context);
-                    _loadHomeState();
+                    _initialBootSync();
                   }
                 },
                 borderRadius: BorderRadius.circular(16),
@@ -210,7 +288,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                   await prefs.setString('wallpaper_type', 'solid');
                   await prefs.setString('wallpaper_path', '0xFF0A0A0A');
                   if (context.mounted) Navigator.pop(context);
-                  _loadHomeState();
+                  _initialBootSync();
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
@@ -244,9 +322,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         opaque: false,
         barrierDismissible: true,
         barrierColor: Colors.black38,
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return const NotificationCenterPanel();
-        },
+        pageBuilder: (context, animation, secondaryAnimation) => const NotificationCenterPanel(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return SlideTransition(
             position: Tween<Offset>(
@@ -277,7 +353,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
         resizeToAvoidBottomInset: false,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          // 1. Double Tap to Lock Screen
           onDoubleTap: () async {
             try {
               const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
@@ -286,31 +361,80 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
               debugPrint("Failed to lock screen: $e");
             }
           },
-          // 2. Swipes tracking for Search and Quick Settings
-          onVerticalDragEnd: (details) {
-            if (details.primaryVelocity != null) {
-              // Swipe Down (Positive velocity) -> Expand Quick Settings panel
-              if (details.primaryVelocity! > 350) {
+          onVerticalDragUpdate: (details) {
+            if (!_isSearchOpen && details.delta.dy > 0) {
+              _gestureAnimationController.value += 
+                  details.delta.dy / MediaQuery.of(context).size.height * 2.0;
+            }
+            else if (_gestureAnimationController.value > 0 && details.delta.dy < 0) {
+              _gestureAnimationController.value += 
+                  details.delta.dy / MediaQuery.of(context).size.height * 2.0;
+            }
+          },
+          onVerticalDragEnd: (details) async {
+            if (_gestureAnimationController.value > 0.18) {
+              _gestureAnimationController.forward();
+              try {
                 const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
-                channel.invokeMethod('expandQuickSettings');
-              } 
-              // Swipe Up (Negative velocity) -> Open search focus container overlay
-              else if (details.primaryVelocity! < -350) {
-                if (!_isSearchOpen) {
-                  setState(() => _isSearchOpen = true);
-                }
+                await channel.invokeMethod('expandQuickSettings');
+              } catch (e) {
+                debugPrint("Status panel channel expansion failure: $e");
+              }
+              
+              Future.delayed(const Duration(milliseconds: 200), () {
+                if (mounted) _gestureAnimationController.reverse();
+              });
+            } else {
+              _gestureAnimationController.reverse();
+            }
+
+            if (details.primaryVelocity != null && details.primaryVelocity! < -350) {
+              if (!_isSearchOpen) {
+                setState(() => _isSearchOpen = true);
               }
             }
           },
           child: Stack(
             children: [
-              WallpaperBackground(
-                onLongPressHome: () {
-                  Feedback.forLongPress(context);
-                  _showWallpaperPickerSheet(context);
-                }, 
-                wallpaperType: _wallpaperType,
-                wallpaperPath: _wallpaperPath,
+              // 1. Isolate the animating background using ValueListenableBuilder
+              ValueListenableBuilder<double>(
+                valueListenable: _dragValueNotifier,
+                builder: (context, dragValue, child) {
+                  double blurSigma = dragValue * 6.0; // Optimized maximum blur radius limits
+                  double parallaxOffset = dragValue * 20.0;       
+                  double wallpaperScale = 1.0 + (dragValue * 0.02);
+
+                  return Stack(
+                    children: [
+                      Transform.translate(
+                        offset: Offset(0, parallaxOffset),
+                        child: Transform.scale(
+                          scale: wallpaperScale,
+                          child: WallpaperBackground(
+                            onLongPressHome: () {
+                              Feedback.forLongPress(context);
+                              _showWallpaperPickerSheet(context);
+                            }, 
+                            wallpaperType: _wallpaperType,
+                            wallpaperPath: _wallpaperPath,
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                      ),
+                      if (blurSigma > 0.1)
+                        Positioned.fill(
+                          child: ImageFiltered(
+                            imageFilter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                            child: Container(color: Colors.black.withOpacity(dragValue * 0.1)),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+
+              // 2. Static Home Layout Structure (No longer rebuilds on touch movements!)
+              Positioned.fill(
                 child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
@@ -329,7 +453,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                         
                         const SizedBox(height: 14),
                         
-                        // Glass Layout Container with Dashboard Inside
                         GlassTheme.buildGlassPanel(
                           borderRadius: BorderRadius.circular(28),
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
@@ -340,7 +463,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                 padding: const EdgeInsets.symmetric(horizontal: 10.0),
                                 child: TilingDashboard(
                                   usageStats: _usageStats,
-                                  totalSystemMinutes: _totalSystemScreenTime, // Connects raw non-overlapping total minutes
+                                  totalSystemMinutes: _totalSystemScreenTime,
                                   notificationCount: _notificationCount,
                                   batteryLevel: _batteryLevel,
                                   isCharging: _isCharging,
@@ -388,7 +511,8 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
                                       }
                                     },
                                     background: Container(
-alignment: Alignment.centerRight,                                      padding: const EdgeInsets.only(right: 28.0),
+                                      alignment: Alignment.centerRight,
+                                      padding: const EdgeInsets.only(right: 28.0),
                                       decoration: BoxDecoration(
                                         color: Colors.redAccent.withOpacity(0.08),
                                         borderRadius: BorderRadius.circular(20),
@@ -461,7 +585,7 @@ alignment: Alignment.centerRight,                                      padding: 
                   preloadedApps: _cachedSystemApps,
                   onClose: () {
                     setState(() => _isSearchOpen = false);
-                    _loadHomeState();
+                    _loadVolatileSystemMetrics(); 
                   },
                 ),
             ],
@@ -483,11 +607,7 @@ alignment: Alignment.centerRight,                                      padding: 
         ? '${(minutes / 60).floor()}h ${minutes % 60}m'
         : '${minutes}m';
 
-    final appMatch = _pinnedAppsList.firstWhere(
-      (element) => element['package'] == packageName, 
-      orElse: () => {}
-    );
-    final String base64Icon = appMatch['icon'] ?? '';
+    final Uint8List? cachedBytes = _decodedIconCache[packageName];
 
     const List<double> grayscaleMatrix = <double>[
       0.21, 0.72, 0.07, 0, 0,
@@ -508,13 +628,14 @@ alignment: Alignment.centerRight,                                      padding: 
               height: 20,
               child: isPermanent
                   ? Icon(iconData, color: Colors.cyanAccent.withOpacity(0.75), size: 18)
-                  : base64Icon.isNotEmpty 
+                  : cachedBytes != null 
                       ? ColorFiltered(
                           colorFilter: const ColorFilter.matrix(grayscaleMatrix),
                           child: Image.memory(
-                            base64Decode(base64Icon), 
+                            cachedBytes, 
                             fit: BoxFit.contain,
-                            filterQuality: FilterQuality.medium, 
+                            filterQuality: FilterQuality.low, 
+                            cacheWidth: 40,                   
                           ),
                         )
                       : Icon(iconData, color: Colors.white30, size: 18),
