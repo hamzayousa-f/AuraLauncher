@@ -32,6 +32,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
   List<AuraAppModel> _filteredApps = [];
   Map<String, int> _searchUsageStats = {};
   List<String> _currentlyPinnedPackages = [];
+  String _lastQuery = ''; // <-- ADD THIS LINE HERE
 
   @override
   void initState() {
@@ -126,6 +127,11 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
 
   void _handleSearchFiltering() {
     final query = _searchController.text.toLowerCase().trim();
+    
+    // If the actual typed characters haven't changed, stop immediately
+    if (query == _lastQuery) return; 
+    _lastQuery = query;
+
     setState(() {
       if (query.isEmpty) {
         _filteredApps = widget.preloadedApps;
@@ -246,6 +252,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                               )
                             : ListView.builder(
                                 itemCount: _filteredApps.length,
+                                itemExtent: 52.0, // <-- ADD THIS LINE HERE
                                 padding: const EdgeInsets.only(top: 8, bottom: 32),
                                 physics: const ClampingScrollPhysics(),
                                 itemBuilder: (context, index) {

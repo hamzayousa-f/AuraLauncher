@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/services.dart'; // <-- ADD THIS LINE HERE
 import 'dart:io';
 import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/home/widgets/notification_center_panel.dart';
@@ -51,46 +52,75 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
     }
   }
 
+ int _notificationCount = 0;
+  int _batteryLevel = 100;
+  bool _isCharging = false;
+
   Future<void> _loadHomeState() async {
-  // 1. Fetch lightweight usage data instantly to keep UI responsive
-  final stats = await UsageService.getZenithUsageData();
-  final prefs = await SharedPreferences.getInstance();
-  
-  setState(() {
-    _usageStats = stats;
-    _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
-    _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
-  });
+    final stats = await UsageService.getZenithUsageData();
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Fetch live native system values
+    int nativeNotifications = 0;
+    int nativeBattery = 100;
+    bool nativeCharging = false;
 
-  // 2. Offload heavy package and icon scanning away from critical rendering startup
-  Future.microtask(() async {
-    final systemApps = await LauncherService.getInstalledApps();
-    final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
-
-    List<Map<String, String>> temporaryPinsList = [];
-    for (String pkg in savedPins) {
-      final match = systemApps.firstWhere(
-        (app) => app.packageName == pkg, 
-        orElse: () => AuraAppModel(name: '', packageName: '')
-      );
+    try {
+      // Invoke your native MainActivity methods
+      const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
       
-      if (match.packageName.isEmpty) continue;
+      final Map<dynamic, dynamic>? batteryData = 
+          await channel.invokeMethod<Map<dynamic, dynamic>>('getBatteryStatus');
+      if (batteryData != null) {
+        nativeBattery = batteryData['level'] ?? 100;
+        nativeCharging = batteryData['isCharging'] ?? false;
+      }
 
-      temporaryPinsList.add({
-        'name': match.name,
-        'package': pkg,
-        'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '', 
-      });
+      // If your method channel name for count matches:
+      final int? count = await channel.invokeMethod<int>('getNotificationCount');
+      if (count != null) nativeNotifications = count;
+    } catch (e) {
+      debugPrint("System Channel Fetch Fail: $e");
     }
 
-    if (mounted) {
-      setState(() {
-        _cachedSystemApps = systemApps;
-        _pinnedAppsList = temporaryPinsList;
-      });
-    }
-  });
-}
+    setState(() {
+      _usageStats = stats;
+      _batteryLevel = nativeBattery;
+      _isCharging = nativeCharging;
+      _notificationCount = nativeNotifications;
+      _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
+      _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
+    });
+
+    // 2. Offload heavy package and icon scanning away from critical rendering startup
+    Future.microtask(() async {
+      final systemApps = await LauncherService.getInstalledApps();
+      final savedPins = prefs.getStringList('pinned_custom_apps') ?? [];
+
+      List<Map<String, String>> temporaryPinsList = [];
+      for (String pkg in savedPins) {
+        final match = systemApps.firstWhere(
+          (app) => app.packageName == pkg, 
+          orElse: () => AuraAppModel(name: '', packageName: '')
+        );
+        
+        if (match.packageName.isEmpty) continue;
+
+        temporaryPinsList.add({
+          'name': match.name,
+          'package': pkg,
+          'icon': match.iconBytes != null ? base64Encode(match.iconBytes!) : '', 
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _cachedSystemApps = systemApps;
+          _pinnedAppsList = temporaryPinsList;
+        });
+      }
+    });
+  }
 
   Future<void> _unpinApp(String packageName) async {
     final prefs = await SharedPreferences.getInstance();
@@ -288,9 +318,9 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
   padding: const EdgeInsets.symmetric(horizontal: 10.0),
   child: TilingDashboard(
     usageStats: _usageStats,
-    notificationCount: 0, // We will bridge your native notificationCount channel variable here next
-    batteryLevel: 85,     // We will wire your battery map data stream down here
-    isCharging: false,
+    notificationCount: _notificationCount, // Live native notifications count
+    batteryLevel: _batteryLevel,           // Live native battery metric
+    isCharging: _isCharging,               // Live charging status indicator
   ),
 ),
                               

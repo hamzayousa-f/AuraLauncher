@@ -16,11 +16,21 @@ class TilingDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate total daily screen time from stats map
+    // 1. Calculate total screen runtime telemetry
     final int totalMinutes = usageStats.values.fold(0, (sum, item) => sum + item);
     final String screenTimeDisplay = totalMinutes >= 60 
         ? '${(totalMinutes / 60).floor()}h ${totalMinutes % 60}m'
         : '${totalMinutes}m';
+
+    // 2. Compute Focus Index algorithm matrix
+    // Perfect score = 100%. Dips down based on screen time accumulation.
+    int focusIndex = 100 - ((totalMinutes / 180) * 50).round(); 
+    if (focusIndex > 100) focusIndex = 100;
+    if (focusIndex < 0) focusIndex = 0;
+
+    Color focusColor = Colors.cyanAccent.withOpacity(0.8);
+    if (focusIndex < 75) focusColor = Colors.amberAccent.withOpacity(0.8);
+    if (focusIndex < 45) focusColor = Colors.redAccent.withOpacity(0.8);
 
     return Container(
       height: 54,
@@ -42,12 +52,12 @@ class TilingDashboard extends StatelessWidget {
           // Ultra-thin Tiling Divider 1
           Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
 
-          // Column 2: Notification Stream Counts
+          // Column 2: Focus Index Dynamic Score
           Expanded(
             child: _buildTile(
-              label: "STREAM",
-              val: notificationCount > 0 ? "$notificationCount Alerts" : "Quiet",
-              color: notificationCount > 0 ? Colors.cyanAccent.withOpacity(0.8) : Colors.white38,
+              label: "FOCUS INDEX",
+              val: "$focusIndex%",
+              color: focusColor,
             ),
           ),
 
@@ -69,7 +79,7 @@ class TilingDashboard extends StatelessWidget {
 
   Widget _buildTile({required String label, required String val, required Color color}) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.center, // <-- FIX COMPLETED HERE
       children: [
         Text(
           label,
