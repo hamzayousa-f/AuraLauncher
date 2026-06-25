@@ -285,18 +285,26 @@ class MainActivity: FlutterActivity() {
 
         private fun expandNotificationPanel() {
             try {
+                // First, try accessing the system statusbar service via reflection
                 val statusBarService = getSystemService("statusbar")
                 val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
-                val method: Method = statusBarManagerClass.getMethod("expandSettingsPanel")
+
+                // On modern Android/crDroid, standard notifications panel expansion is less heavily restricted
+                val method: Method = statusBarManagerClass.getMethod("expandNotificationsPanel")
                 method.invoke(statusBarService)
             } catch (e: Exception) {
                 try {
+                    // Alternative fallback approach using system reflection commands
                     val statusBarService = getSystemService("statusbar")
                     val statusBarManagerClass = Class.forName("android.app.StatusBarManager")
-                    val method: Method = statusBarManagerClass.getMethod("expandNotificationsPanel")
+                    val method: Method = statusBarManagerClass.getMethod("expandSettingsPanel")
                     method.invoke(statusBarService)
                 } catch (ex: Exception) {
-                    Log.e("AuraLauncher", "Notification channel expansion failure", ex)
+                    Log.e("AuraLauncher", "Both notification and settings panels are restricted by the OS profile", ex)
+
+                    // Final safety fallback: Send an implicit system intent to collapse/expand panels if supported by the ROM
+                    val closeIntent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+                    sendBroadcast(closeIntent)
                 }
             }
         }
