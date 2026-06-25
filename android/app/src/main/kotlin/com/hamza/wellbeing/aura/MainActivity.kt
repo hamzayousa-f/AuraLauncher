@@ -22,6 +22,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.Calendar
+import android.app.usage.UsageEvents // Add this line
 import java.util.Locale
 import org.json.JSONArray
 
@@ -96,12 +97,14 @@ class MainActivity: FlutterActivity() {
                         )
                         result.success(data)
                     }
+                    "getTotalSystemScreenTime" -> {
+                        result.success(computeAbsoluteScreenTimeMinutes())
+                    }
                     // --- NEW NOTIFICATION STREAM CHANNELS ---
                     "getNotificationCount" -> {
                         result.success(NotificationService.getActiveNotificationsCount())
                     }
                     "getActiveNotifications" -> {
-                        // Bridges the structural metadata array fields perfectly
                         result.success(NotificationService.getActiveNotificationsData())
                     }
                     "checkNotificationPermission" -> {
@@ -212,6 +215,62 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 return statsMap
+        }
+
+        private fun computeAbsoluteScreenTimeMinutes(): Int {
+            if (!isUsageStatsPermissionGranted()) return 0
+
+                val calendar = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val midnightToday = calendar.timeInMillis
+                val now = System.currentTimeMillis()
+
+                val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+                val events = usageStatsManager.queryEvents(midnightToday, now)
+                val event = UsageEvents.Event()
+
+                var totalForegroundMs: Long = 0
+                var lastEventTime: Long = 0
+                var currentActivePackage: String? = null
+
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+
+                    // Using the fully qualified class names if needed, but import should fix it
+                    if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        if (currentActivePackage != null && lastEventTime > 0) {
+                            val duration = event.timeStamp - lastEventTime
+                            if (duration > 0 && currentActivePackage != packageName) {
+                                totalForegroundMs += duration
+                            }
+                        }
+                        currentActivePackage = event.packageName
+                        lastEventTime = event.timeStamp
+                    } else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                        event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                        if (currentActivePackage == event.packageName && lastEventTime > 0) {
+                            val duration = event.timeStamp - lastEventTime
+                            if (duration > 0 && currentActivePackage != packageName) {
+                                totalForegroundMs += duration
+                            }
+                            currentActivePackage = null
+                            lastEventTime = 0
+                        }
+                        }
+                }
+
+                if (currentActivePackage != null && lastEventTime > 0 && currentActivePackage != packageName) {
+                    val trailingDuration = now - lastEventTime
+                    if (trailingDuration > 0) {
+                        totalForegroundMs += trailingDuration
+                    }
+                }
+
+                return (totalForegroundMs / (1000 * 60)).toInt().coerceAtLeast(0)
         }
 
         private fun fetchInstalledApplications(): List<Map<String, Any>> {
