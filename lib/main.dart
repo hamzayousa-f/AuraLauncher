@@ -11,10 +11,14 @@ void main() {
 class AuraApp extends StatelessWidget {
   const AuraApp({Key? key}) : super(key: key);
 
+  // Global static key allows navigation from anywhere, ignoring stale local widget lifecycle trees
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Aura Launcher',
+      navigatorKey: AuraApp.navigatorKey, // Bind key here
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: Colors.black,
@@ -52,21 +56,19 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
   }
 
   void _routeToFrictionOverlay(String packageName) {
-    // We intentionally force currentAccumulatedMinutes to 35 here.
-    // Since 35 >= 30, the hasExceededLimit getter evaluates to TRUE 
-    // and satisfies the visibility rule required to display the overlay layout.
     final mockProfile = BlockerProfile(
       packageId: packageName,
       readableName: packageName.split('.').last.toUpperCase(),
       visualIcon: Icons.hourglass_empty_rounded,
       isRestricted: true,
       allocationLimitMinutes: 30,
-      currentAccumulatedMinutes: 35, 
+      currentAccumulatedMinutes: 35, // Forces hasExceededLimit = true
       IsSecurityEnforced: false,
       accessPinCode: "1234",
     );
 
-    Navigator.of(context).push(
+    // Route using the master global layout state context key
+    AuraApp.navigatorKey.currentState?.push(
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (context, animation, secondaryAnimation) => FluidFrictionOverlay(
@@ -85,7 +87,6 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Safely renders your real interactive dashboard layout as the home layer
     return const HomeView(); 
   }
 }

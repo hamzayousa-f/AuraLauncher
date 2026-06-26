@@ -29,12 +29,14 @@ class AuraBlockerService : AccessibilityService() {
                     val blockIntent = Intent(this, MainActivity::class.java).apply {
                         action = Intent.ACTION_MAIN
                         addCategory(Intent.CATEGORY_LAUNCHER)
+                        // FLAG_ACTIVITY_CLEAR_TASK completely strips background state limits
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                         putExtra("BLOCKED_PACKAGE_EXTRA", launchedPackage)
                     }
                     startActivity(blockIntent)
+
                 }
         }
     }
