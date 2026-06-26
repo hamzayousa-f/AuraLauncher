@@ -1,5 +1,6 @@
 import 'package:aura/features/blocker/data/blocker_profile.dart';
 import 'package:aura/features/blocker/presentation/views/fluid_friction_overlay.dart';
+import 'package:aura/features/home/presentation/home_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -82,18 +83,5 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text(
-          "Aura",
-          style: TextStyle(
-            color: Colors.white24,
-            fontSize: 32,
-            fontWeight: FontWeight.w200,
-            letterSpacing: 4.0,
-          ),
-        ),
-      ),
-    );
-  }
+return const HomeView();  }
 }
