@@ -1,10 +1,11 @@
 import 'dart:math';
 import 'dart:ui';
+import 'package:aura/features/home/widgets/analytics_view.dart';
+import 'package:aura/features/home/widgets/blocker_view.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/shared/tactile_button.dart';
 import '../../../../core/services/usage_service.dart';
 
-// --- Local Shared Configuration Models ---
 class AuraPieSegment {
   final String label;
   final Duration duration;
@@ -28,7 +29,6 @@ class AuraTopAppItem {
   AuraTopAppItem({required this.name, required this.duration, required this.percentage, required this.fallbackIcon, required this.markerColor});
 }
 
-// --- Main State Controller Widget ---
 class AuraDashboardView extends StatefulWidget {
   const AuraDashboardView({super.key});
 
@@ -37,7 +37,7 @@ class AuraDashboardView extends StatefulWidget {
 }
 
 class _AuraDashboardViewState extends State<AuraDashboardView> {
-  int _activeTabIndex = 0; // 0 = Hub, 1 = Analytics, 2 = Blocker
+  int _activeTabIndex = 0; 
   bool _isLoading = true;
   
   Duration _totalScreentime = Duration.zero;
@@ -46,10 +46,10 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
   List<AuraTopAppItem> _topApps = [];
 
   final List<Color> _auraPalette = [
-    const Color(0xFF818CF8), // Indigo
-    const Color(0xFF60A5FA), // Soft Blue
-    const Color(0xFF34D399), // Mint Green
-    const Color(0xFFFBBF24), // Amber
+    const Color(0xFF818CF8),
+    const Color(0xFF60A5FA),
+    const Color(0xFF34D399),
+    const Color(0xFFFBBF24),
   ];
 
   @override
@@ -73,7 +73,6 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
       return;
     }
 
-    // Strict structural sync to ensure dashboard maps match tiling panels 1:1
     int calculatedTotalMinutes = rawStats.values.fold(0, (sum, mins) => sum + mins);
     _totalScreentime = Duration(minutes: calculatedTotalMinutes);
 
@@ -106,16 +105,11 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
         );
 
         processedSegments.add(
-          AuraPieSegment(
-            label: readableName,
-            duration: appDuration,
-            color: assignedColor,
-          ),
+          AuraPieSegment(label: readableName, duration: appDuration, color: assignedColor),
         );
       }
     }
 
-    // Safely dump any remaining fractional apps to maintain data balance 1:1
     if (calculatedTotalMinutes > dynamicMinutesSum) {
       processedSegments.add(
         AuraPieSegment(
@@ -126,36 +120,17 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
       );
     }
 
-    // Process Live Category Matrix with fixed bool evaluation
     final Map<String, int> categoryAggregator = {
-      'Social Media': 0,
-      'Productivity': 0,
-      'Entertainment': 0,
-      'Utilities': 0,
+      'Social Media': 0, 'Productivity': 0, 'Entertainment': 0, 'Utilities': 0,
     };
 
     rawStats.forEach((pkg, mins) {
       final String lowerPkg = pkg.toLowerCase();
-      if (lowerPkg.contains('instagram') || 
-          lowerPkg.contains('facebook') || 
-          lowerPkg.contains('twitter') || 
-          lowerPkg.contains('snapchat') || 
-          lowerPkg.contains('tiktok') || 
-          lowerPkg.contains('whatsapp')) {
+      if (lowerPkg.contains('instagram') || lowerPkg.contains('facebook') || lowerPkg.contains('twitter') || lowerPkg.contains('whatsapp')) {
         categoryAggregator['Social Media'] = categoryAggregator['Social Media']! + mins;
-      } else if (lowerPkg.contains('youtube') || 
-                 lowerPkg.contains('netflix') || 
-                 lowerPkg.contains('game') || 
-                 lowerPkg.contains('vlc') || 
-                 lowerPkg.contains('spotify')) {
+      } else if (lowerPkg.contains('youtube') || lowerPkg.contains('netflix') || lowerPkg.contains('spotify')) {
         categoryAggregator['Entertainment'] = categoryAggregator['Entertainment']! + mins;
-      } else if (lowerPkg.contains('studio') || 
-                 lowerPkg.contains('github') || 
-                 lowerPkg.contains('flutter') || 
-                 lowerPkg.contains('teams') || 
-                 lowerPkg.contains('slack') || 
-                 lowerPkg.contains('zoom') || 
-                 lowerPkg.contains('vcode')) {
+      } else if (lowerPkg.contains('studio') || lowerPkg.contains('github') || lowerPkg.contains('flutter')) {
         categoryAggregator['Productivity'] = categoryAggregator['Productivity']! + mins;
       } else {
         categoryAggregator['Utilities'] = categoryAggregator['Utilities']! + mins;
@@ -188,17 +163,14 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
     if (!packageName.contains('.')) return packageName;
     final parts = packageName.split('.');
     String name = parts.last;
-    if (name.toLowerCase() == 'android' && parts.length > 1) {
-      name = parts[parts.length - 2];
-    }
     return name[0].toUpperCase() + name.substring(1);
   }
 
   IconData _getCategoryIcon(String pkg) {
     final lower = pkg.toLowerCase();
-    if (lower.contains('camera') || lower.contains('gallery') || lower.contains('instagram')) return Icons.camera_alt_rounded;
+    if (lower.contains('instagram')) return Icons.camera_alt_rounded;
     if (lower.contains('code') || lower.contains('github') || lower.contains('studio')) return Icons.code_rounded;
-    if (lower.contains('youtube') || lower.contains('play') || lower.contains('video')) return Icons.play_circle_fill_rounded;
+    if (lower.contains('youtube')) return Icons.play_circle_fill_rounded;
     return Icons.widgets_rounded;
   }
 
@@ -228,23 +200,29 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
                       ),
                     ),
                   )
-                : IndexedStack(
-                    index: _activeTabIndex,
+                : Column(
                     children: [
-                      _buildDailyHubView(),
-                      _buildPlaceholderView('Analytics Engine Pipeline Active'),
-                      _buildPlaceholderView('System Shield Blocker Ready'),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                        child: _buildTopAppBar(),
+                      ),
+                      Expanded(
+                        child: IndexedStack(
+                          index: _activeTabIndex,
+                          children: [
+                            _buildDailyHubView(),
+                            AnalyticsView(onRefresh: _fetchRealTelemetry),
+                            const BlockerView(),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
           ),
           
-          // Floating Ambient Bottom Glass Dock Wrapper
           Positioned(
-            left: 24,
-            right: 24,
-            bottom: MediaQuery.of(context).padding.bottom > 0 
-                ? MediaQuery.of(context).padding.bottom 
-                : 24,
+            left: 24, right: 24,
+            bottom: MediaQuery.of(context).padding.bottom > 0 ? MediaQuery.of(context).padding.bottom : 24,
             child: _buildFloatingGlassDock(),
           ),
         ],
@@ -266,41 +244,12 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TactileButton(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: _buildGlassIcon(Icons.arrow_back_ios_new_rounded),
-                ),
-                const Text(
-                  'AURA ENGINE',
-                  style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 2.5,
-                  ),
-                ),
-                TactileButton(
-                  onTap: _fetchRealTelemetry,
-                  child: _buildGlassIcon(Icons.refresh_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
             const Text(
               'Digital Footprint',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w300,
-                letterSpacing: -0.6,
-              ),
+              style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w300, letterSpacing: -0.6),
             ),
             const SizedBox(height: 20),
             
-            // 1st Component: Synced Vector Pie Chart Card
             _buildGlassPanel(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -308,8 +257,7 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 200,
-                      height: 200,
+                      width: 200, height: 200,
                       child: CustomPaint(
                         painter: AuraDashboardPiePainter(
                           segments: _segments,
@@ -321,24 +269,9 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '${hours}h ${mins}m',
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
+                        Text('$hours\h $mins\m', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
                         const SizedBox(height: 2),
-                        Text(
-                          'TOTAL SCREEN TIME',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.3),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
+                        Text('TOTAL SCREEN TIME', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.6)),
                       ],
                     ),
                   ],
@@ -347,7 +280,6 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
             ),
             const SizedBox(height: 24),
 
-            // 2nd Component: Category Breakdowns
             if (_categories.isNotEmpty) ...[
               _buildSectionHeader('Category Matrix'),
               _buildGlassPanel(
@@ -362,14 +294,8 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                cat.name,
-                                style: const TextStyle(fontSize: 13, color: Colors.white),
-                              ),
-                              Text(
-                                '${cat.duration.inHours > 0 ? "${cat.duration.inHours}h " : ""}${cat.duration.inMinutes.remainder(60)}m',
-                                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4)),
-                              ),
+                              Text(cat.name, style: const TextStyle(fontSize: 13, color: Colors.white)),
+                              Text('${cat.duration.inHours > 0 ? "${cat.duration.inHours}h " : ""}${cat.duration.inMinutes.remainder(60)}m', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4))),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -391,94 +317,67 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
               const SizedBox(height: 24),
             ],
 
-            // 3rd Component: Top Consumer Channels
             _buildSectionHeader('Top Consumer Channels'),
-            if (_topApps.isEmpty)
-              _buildGlassPanel(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text(
-                    'No background logs found.',
-                    style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13),
-                  ),
-                ),
-              )
-            else
-              ...List.generate(_topApps.length, (idx) {
-                final app = _topApps[idx];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _buildGlassPanel(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.03),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(app.fallbackIcon, color: app.markerColor, size: 18),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            app.name,
-                            style: const TextStyle(fontSize: 14, color: Colors.white),
-                            overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${app.duration.inHours > 0 ? "${app.duration.inHours}h " : ""}${app.duration.inMinutes.remainder(60)}m',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
-                          ),
-                          Text(
-                            app.percentage,
-                            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }),
+            _buildTopAppsSection(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPlaceholderView(String description) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildGlassPanel(
-            padding: const EdgeInsets.all(32),
-            child: SizedBox(
-              width: 240,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bubble_chart_rounded, size: 32, color: Colors.white.withOpacity(0.1)),
-                  const SizedBox(height: 16),
-                  Text(
-                    description,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13, letterSpacing: -0.1),
-                  ),
-                ],
-              ),
+  Widget _buildTopAppBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        TactileButton(
+          onTap: () => Navigator.of(context).pop(),
+          child: _buildGlassIcon(Icons.arrow_back_ios_new_rounded),
+        ),
+        const Text('AURA CORE ENGINE', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2.5)),
+        TactileButton(
+          onTap: _fetchRealTelemetry,
+          child: _buildGlassIcon(Icons.refresh_rounded),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopAppsSection() {
+    if (_topApps.isEmpty) {
+      return _buildGlassPanel(
+        padding: const EdgeInsets.all(24),
+        child: Center(child: Text('No background logs found.', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13))),
+      );
+    }
+    return Column(
+      children: List.generate(_topApps.length, (idx) {
+        final app = _topApps[idx];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildGlassPanel(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(10)),
+                  alignment: Alignment.center,
+                  child: Icon(app.fallbackIcon, color: app.markerColor, size: 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: Text(app.name, style: const TextStyle(fontSize: 14, color: Colors.white), overflow: TextOverflow.ellipsis)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${app.duration.inHours > 0 ? "${app.duration.inHours}h " : ""}${app.duration.inMinutes.remainder(60)}m', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white)),
+                    Text(app.percentage, style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
+                  ],
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      }),
     );
   }
 
@@ -522,20 +421,9 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : Colors.white38,
-              size: 20,
-            ),
+            Icon(icon, color: isSelected ? Colors.white : Colors.white38, size: 20),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white38,
-                fontSize: 9,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
+            Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white38, fontSize: 9, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400)),
           ],
         ),
       ),
@@ -545,48 +433,32 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: Colors.white.withOpacity(0.4)),
-      ),
+      child: Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: Colors.white.withOpacity(0.4))),
     );
   }
 
   Widget _buildGlassIcon(IconData icon) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
-          ),
-          child: Icon(icon, color: Colors.white70, size: 16),
-        ),
+    return Container(
+      width: 40, height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
+      child: Icon(icon, color: Colors.white70, size: 16),
     );
   }
 
   Widget _buildGlassPanel({required Widget child, EdgeInsetsGeometry? padding}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          width: double.infinity,
-          padding: padding,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.02),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
-          ),
-          child: child,
-        ),
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.02),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
+      child: child,
     );
   }
 }
