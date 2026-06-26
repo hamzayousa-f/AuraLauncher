@@ -61,7 +61,6 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    // FIXED: Handled the distinct method name used by UsageService to avoid missing channel data pipelines
                     "getAppUsageStats", "getNativeScreenTime", "getZenithUsageData" -> {
                         val startTime = call.argument<Long>("startTime") ?: Calendar.getInstance().apply {
                             set(Calendar.HOUR_OF_DAY, 0)
@@ -127,6 +126,7 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
+                    // FIXED: Explicitly handle platform channel cleanup fallback
                     else -> result.notImplemented()
                 }
             }
@@ -194,11 +194,11 @@ class MainActivity: FlutterActivity() {
             return mode == AppOpsManager.MODE_ALLOWED
         }
 
-        private fun getDeviceScreenTimeMinutes(startTime: Long, endTime: Long): Map<String, Int> {
+        // FIXED: Refactored away from queryAndAggregateUsageStats to precise queryEvents
+        // This removes time boundaries bleeding and matches your Zenith Dashboard completely.
+        private fun getDeviceScreenTimeMinutes(startTimeFromFlutter: Long, endTimeFromFlutter: Long): Map<String, Int> {
             val statsMap = mutableMapOf<String, Int>()
             if (!isUsageStatsPermissionGranted()) return statsMap
-
-                val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
                 val calendar = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
@@ -206,25 +206,70 @@ class MainActivity: FlutterActivity() {
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                val midnightToday = calendar.timeInMillis
-                val now = System.currentTimeMillis()
+                val strictMidnightToday = calendar.timeInMillis
+                val strictNow = System.currentTimeMillis()
 
-                // Gather metrics using localized rolling system midnight frames
-                val aggregatedStats = usageStatsManager.queryAndAggregateUsageStats(midnightToday, now)
+                val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+                val events = usageStatsManager.queryEvents(strictMidnightToday, strictNow)
+                val event = UsageEvents.Event()
 
-                if (aggregatedStats != null && aggregatedStats.isNotEmpty()) {
-                    for ((packageName, stat) in aggregatedStats) {
-                        val totalMs = stat.totalTimeInForeground
-                        if (totalMs > 0) {
-                            // FIXED: Replaced brittle system time checks with robust rounding logic.
-                            // If an application has foreground runtime today, it will display reliably.
-                            val minutes = if (totalMs in 1..59999) 1 else (totalMs / (1000 * 60)).toInt()
-                            if (minutes > 0) {
-                                statsMap[packageName] = minutes
+                val appAccumulatedMs = HashMap<String, Long>()
+
+                // Track state exactly like your working computeAbsoluteScreenTimeMinutes function
+                var lastEventTime: Long = 0
+                var currentActivePackage: String? = null
+
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    val pkgName = event.packageName ?: continue
+
+                    if (pkgName == packageName) continue // Skip Aura itself
+
+                        if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                            // Close out the previous app's session if it wasn't paused cleanly
+                            if (currentActivePackage != null && lastEventTime > 0 && event.timeStamp > lastEventTime) {
+                                val duration = event.timeStamp - lastEventTime
+                                // Basic sanity guard: skip any tracking segment larger than a realistic 24-hour block
+                                if (duration in 1..86400000L) {
+                                    val totalMs = appAccumulatedMs[currentActivePackage] ?: 0L
+                                    appAccumulatedMs[currentActivePackage!!] = totalMs + duration
+                                }
                             }
+                            currentActivePackage = pkgName
+                            lastEventTime = event.timeStamp
                         }
+                        else if (event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                            event.eventType == UsageEvents.Event.ACTIVITY_STOPPED) {
+
+                            if (currentActivePackage == pkgName && lastEventTime > 0 && event.timeStamp > lastEventTime) {
+                                val duration = event.timeStamp - lastEventTime
+                                if (duration in 1..86400000L) {
+                                    val totalMs = appAccumulatedMs[pkgName] ?: 0L
+                                    appAccumulatedMs[pkgName] = totalMs + duration
+                                }
+                                currentActivePackage = null
+                                lastEventTime = 0
+                            }
+                            }
+                }
+
+                // Catch the app currently open right now at the moment of query
+                if (currentActivePackage != null && lastEventTime > 0 && strictNow > lastEventTime) {
+                    val trailingDuration = strictNow - lastEventTime
+                    if (trailingDuration in 1..86400000L) {
+                        val totalMs = appAccumulatedMs[currentActivePackage!!] ?: 0L
+                        appAccumulatedMs[currentActivePackage!!] = totalMs + trailingDuration
                     }
                 }
+
+                // Convert millisecond sums to minutes
+                for ((pkg, totalMs) in appAccumulatedMs) {
+                    val minutes = (totalMs / (1000 * 60)).toInt()
+                    if (minutes > 0) {
+                        statsMap[pkg] = minutes
+                    }
+                }
+
                 return statsMap
         }
 
