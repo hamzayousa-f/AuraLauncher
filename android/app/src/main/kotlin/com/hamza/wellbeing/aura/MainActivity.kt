@@ -13,10 +13,12 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import android.view.WindowManager
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -38,6 +40,27 @@ class MainActivity: FlutterActivity() {
 
             // Tracks the most recent package intercepted by AuraBlockerService
             private var lastBlockedPackageName: String? = null
+
+                override fun onCreate(savedInstanceState: Bundle?) {
+                    super.onCreate(savedInstanceState)
+
+                    // Force Window flags to punch through background launch limits on modern Android layers
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        setShowWhenLocked(true)
+                        setTurnScreenOn(true)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        window.addFlags(
+                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                        )
+                    }
+
+                    window.addFlags(
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+                    )
+                }
 
                 override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
                     super.configureFlutterEngine(flutterEngine)
