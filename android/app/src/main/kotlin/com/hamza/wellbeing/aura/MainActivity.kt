@@ -63,6 +63,21 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
+                    "bringLauncherToForeground" -> {
+                        try {
+                            val intent = Intent(context, MainActivity::class.java).apply {
+                                action = Intent.ACTION_MAIN
+                                addCategory(Intent.CATEGORY_LAUNCHER)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            }
+                            context.startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("FOREGROUND_ERROR", e.localizedMessage, null)
+                        }
+                    }
                     "getAppUsageStats", "getNativeScreenTime", "getZenithUsageData" -> {
                         val startTime = call.argument<Long>("startTime") ?: Calendar.getInstance().apply {
                             set(Calendar.HOUR_OF_DAY, 0)
@@ -131,7 +146,7 @@ class MainActivity: FlutterActivity() {
                 }
             }
 
-            // 2. NEW: Native Blocker Sync Mechanism
+            // 2. Native Blocker Sync Mechanism
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYNC_CHANNEL).setMethodCallHandler { call, result ->
                 if (call.method == "syncRules") {
                     try {
