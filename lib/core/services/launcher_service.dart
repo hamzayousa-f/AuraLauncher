@@ -15,6 +15,9 @@ class LauncherService {
     'com.hamza.wellbeing.aura/launcher',
   );
 
+  // Callback to check if app should be blocked (set from main app)
+  static Future<bool> Function(String packageName)? shouldBlockAppCallback;
+
   static Future<List<AuraAppModel>> getInstalledApps() async {
     try {
       final List<dynamic>? apps = await _channel.invokeMethod(
@@ -47,13 +50,39 @@ class LauncherService {
     return [];
   }
 
-  static Future<void> launchApp(String packageName) async {
+  /// Launch app with optional blocker check
+  static Future<LaunchResult> launchApp(String packageName) async {
     try {
+      // Check if app should be blocked
+      if (shouldBlockAppCallback != null) {
+        final shouldBlock = await shouldBlockAppCallback!(packageName);
+        if (shouldBlock) {
+          return LaunchResult(
+            success: false,
+            blocked: true,
+            packageName: packageName,
+          );
+        }
+      }
+
+      // Launch the app
       await _channel.invokeMethod('launchSystemApp', {
         'packageName': packageName,
       });
+
+      return LaunchResult(
+        success: true,
+        blocked: false,
+        packageName: packageName,
+      );
     } catch (e) {
       print("Failed to launch application target: $e");
+      return LaunchResult(
+        success: false,
+        blocked: false,
+        packageName: packageName,
+        error: e.toString(),
+      );
     }
   }
 
@@ -77,4 +106,19 @@ class LauncherService {
   static Future<void> launchPhoneDialer() async =>
       await launchApp('com.android.dialer');
   static Future<void> launchWhatsApp() async => await launchApp('com.whatsapp');
+}
+
+/// Result of a launch attempt
+class LaunchResult {
+  final bool success;
+  final bool blocked;
+  final String packageName;
+  final String? error;
+
+  LaunchResult({
+    required this.success,
+    required this.blocked,
+    required this.packageName,
+    this.error,
+  });
 }

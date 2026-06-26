@@ -22,4 +22,34 @@ class BlockerProfile {
   });
 
   bool get hasExceededLimit => currentAccumulatedMinutes >= allocationLimitMinutes;
+
+  // JSON serialization
+  Map<String, dynamic> toJson() {
+    return {
+      'packageId': packageId,
+      'readableName': readableName,
+      'iconCodePoint': visualIcon.codePoint,
+      'isRestricted': isRestricted,
+      'allocationLimitMinutes': allocationLimitMinutes,
+      'currentAccumulatedMinutes': currentAccumulatedMinutes,
+      'IsSecurityEnforced': IsSecurityEnforced,
+      'accessPinCode': accessPinCode,
+    };
+  }
+
+  factory BlockerProfile.fromJson(Map<String, dynamic> json) {
+    return BlockerProfile(
+      packageId: json['packageId'] ?? '',
+      readableName: json['readableName'] ?? 'Unknown',
+      visualIcon: IconData(
+        json['iconCodePoint'] ?? Icons.apps.codePoint,
+        fontFamily: 'MaterialIcons',
+      ),
+      isRestricted: json['isRestricted'] ?? false,
+      allocationLimitMinutes: json['allocationLimitMinutes'] ?? 30,
+      currentAccumulatedMinutes: json['currentAccumulatedMinutes'] ?? 0,
+      IsSecurityEnforced: json['IsSecurityEnforced'] ?? false,
+      accessPinCode: json['accessPinCode'],
+    );
+  }
 }

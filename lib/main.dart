@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/launcher_service.dart';
+import 'features/blocker/data/blocker_service.dart';
 import 'features/home/presentation/home_view.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize blocker service and load saved profiles
+  await BlockerService.instance.fetchInstalledApps();
+  
+  // Set up blocker callback in launcher service
+  LauncherService.shouldBlockAppCallback = (packageName) async {
+    return BlockerService.instance.shouldBlockApp(packageName);
+  };
+  
   runApp(const AuraLauncher());
 }
 

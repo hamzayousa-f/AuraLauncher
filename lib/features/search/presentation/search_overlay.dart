@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:aura/features/blocker/data/blocker_service.dart';
+import 'package:aura/features/blocker/presentation/views/fluid_friction_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -411,10 +413,28 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                                     displayData: _getDisplayData(app),
                                     grayscaleMatrix: grayscaleMatrix,
                                     showDivider: index > 0,
-                                    onTap: () {
+                                    onTap: () async {
                                       _focusNode.unfocus();
-                                      LauncherService.launchApp(app.packageName);
-                                    },
+final result = await LauncherService.launchApp(app.packageName);
+
+if (result.blocked && mounted) {
+  final profile = BlockerService.instance.getProfileForPackage(app.packageName);
+  
+  if (profile != null) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FluidFrictionOverlay(
+          profile: profile,
+          onOverrideUnlocked: () async {
+            profile.currentAccumulatedMinutes = 0;
+            await BlockerService.instance.updateProfile(profile);
+          },
+        ),
+      ),
+    );
+  }
+}                                    },
                                     onLongPress: () {
                                       _togglePinState(app.packageName, app.name);
                                     },

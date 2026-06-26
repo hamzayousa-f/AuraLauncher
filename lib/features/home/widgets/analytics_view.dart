@@ -41,9 +41,9 @@ class AnalyticsView extends StatefulWidget {
   State<AnalyticsView> createState() => _AnalyticsViewState();
 }
 
-class _AnalyticsViewState extends State<AnalyticsView> {
+class _AnalyticsViewState extends State<AnalyticsView> with WidgetsBindingObserver {
   bool _isProcessing = true;
-  int _selectedDayIndex = 4; // Default to Friday (Index 4)
+  int _selectedDayIndex = 0; // Calculated dynamically in initState
   List<AuraWeeklyBarData> _dynamicWeeklyHistory = [];
   List<AuraRankedAppItem> _currentRenderedRankings = [];
   double _calculatedAvgHours = 0.0;
@@ -59,50 +59,108 @@ class _AnalyticsViewState extends State<AnalyticsView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Dynamically align active viewing window to today's real system index
+    _selectedDayIndex = DateTime.now().weekday - 1; // Monday = 0, Saturday = 5
     _processPlatformTelemetry();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // If you open the app after midnight, force index synchronization instantly
+    if (state == AppLifecycleState.resumed) {
+      final currentWeekdayIdx = DateTime.now().weekday - 1;
+      if (_selectedDayIndex != currentWeekdayIdx) {
+        setState(() {
+          _selectedDayIndex = currentWeekdayIdx;
+        });
+        _processPlatformTelemetry();
+      }
+    }
   }
 
   Future<void> _processPlatformTelemetry() async {
     setState(() => _isProcessing = true);
     
-    // 1. Pull exact real-time telemetry from your live engine anchor
     final Map<String, int> realTodayUsage = await UsageService.getZenithUsageData();
-    
     int todayTotalMins = realTodayUsage.values.fold(0, (sum, val) => sum + val);
     double todayHours = todayTotalMins / 60.0;
 
-    // 2. Realistic mobile application snapshots for historical days
+    // Current local baseline index matching system
+    int realSystemWeekday = DateTime.now().weekday; // 1 = Mon, 6 = Sat, 7 = Sun
+
+    // Historical app telemetry mappings
     final Map<String, int> monData = {'com.whatsapp': 90, 'com.github.android': 120, 'com.android.chrome': 45};
     final Map<String, int> tueData = {'com.whatsapp': 70, 'com.github.android': 110, 'com.youtube': 50};
     final Map<String, int> wedData = {'com.instagram.android': 140, 'com.whatsapp': 60, 'com.github.android': 130};
     final Map<String, int> thuData = {'com.youtube': 120, 'com.github.android': 160, 'com.whatsapp': 40};
-    
-    // Saturday and Sunday are initialized completely empty because they are in the future
+    final Map<String, int> friData = {'com.whatsapp': 85, 'com.youtube': 90, 'com.instagram.android': 40};
     final Map<String, int> satData = {};
     final Map<String, int> sunData = {};
 
+    // Dynamic array loading determined purely by the system calendar constraints
     _dynamicWeeklyHistory = [
-      AuraWeeklyBarData(dayLabel: 'Mon', totalHours: 4.2, dailyBreakdownSnapshot: monData),
-      AuraWeeklyBarData(dayLabel: 'Tue', totalHours: 3.8, dailyBreakdownSnapshot: tueData),
-      AuraWeeklyBarData(dayLabel: 'Wed', totalHours: 5.5, dailyBreakdownSnapshot: wedData),
-      AuraWeeklyBarData(dayLabel: 'Thu', totalHours: 5.3, dailyBreakdownSnapshot: thuData),
-      AuraWeeklyBarData(dayLabel: 'Fri', totalHours: todayHours.toPrecision(1), isToday: true, dailyBreakdownSnapshot: realTodayUsage),
-      AuraWeeklyBarData(dayLabel: 'Sat', totalHours: 0.0, dailyBreakdownSnapshot: satData),
-      AuraWeeklyBarData(dayLabel: 'Sun', totalHours: 0.0, dailyBreakdownSnapshot: sunData),
+      AuraWeeklyBarData(
+        dayLabel: 'Mon', 
+        totalHours: realSystemWeekday == 1 ? todayHours.toPrecision(1) : 4.2, 
+        isToday: realSystemWeekday == 1, 
+        dailyBreakdownSnapshot: realSystemWeekday == 1 ? realTodayUsage : monData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Tue', 
+        totalHours: realSystemWeekday == 2 ? todayHours.toPrecision(1) : 3.8, 
+        isToday: realSystemWeekday == 2, 
+        dailyBreakdownSnapshot: realSystemWeekday == 2 ? realTodayUsage : tueData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Wed', 
+        totalHours: realSystemWeekday == 3 ? todayHours.toPrecision(1) : 5.5, 
+        isToday: realSystemWeekday == 3, 
+        dailyBreakdownSnapshot: realSystemWeekday == 3 ? realTodayUsage : wedData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Thu', 
+        totalHours: realSystemWeekday == 4 ? todayHours.toPrecision(1) : 5.3, 
+        isToday: realSystemWeekday == 4, 
+        dailyBreakdownSnapshot: realSystemWeekday == 4 ? realTodayUsage : thuData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Fri', 
+        totalHours: realSystemWeekday == 5 ? todayHours.toPrecision(1) : 4.6, 
+        isToday: realSystemWeekday == 5, 
+        dailyBreakdownSnapshot: realSystemWeekday == 5 ? realTodayUsage : friData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Sat', 
+        totalHours: realSystemWeekday == 6 ? todayHours.toPrecision(1) : 0.0, 
+        isToday: realSystemWeekday == 6, 
+        dailyBreakdownSnapshot: realSystemWeekday == 6 ? realTodayUsage : satData
+      ),
+      AuraWeeklyBarData(
+        dayLabel: 'Sun', 
+        totalHours: realSystemWeekday == 7 ? todayHours.toPrecision(1) : 0.0, 
+        isToday: realSystemWeekday == 7, 
+        dailyBreakdownSnapshot: realSystemWeekday == 7 ? realTodayUsage : sunData
+      ),
     ];
 
-    // Compute active average boundary based only on days that have logged metrics
     double baseSum = _dynamicWeeklyHistory.fold(0.0, (acc, element) => acc + element.totalHours);
     int activeDaysCount = _dynamicWeeklyHistory.where((e) => e.totalHours > 0 || e.isToday).length;
     _calculatedAvgHours = activeDaysCount > 0 ? baseSum / activeDaysCount : 0.0;
 
-    // Map initial ranking state layout to our active choice index (Friday)
     _rebuildRankedInventoryList(_selectedDayIndex);
 
     setState(() => _isProcessing = false);
   }
 
   void _rebuildRankedInventoryList(int targetDayIndex) {
+    if (_dynamicWeeklyHistory.isEmpty) return;
     final selectedDayData = _dynamicWeeklyHistory[targetDayIndex].dailyBreakdownSnapshot;
 
     if (selectedDayData.isNotEmpty) {
@@ -182,7 +240,6 @@ class _AnalyticsViewState extends State<AnalyticsView> {
             ),
             const SizedBox(height: 20),
 
-            // Interactive Clickable Bar Graph Section
             _buildGlassPanel(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -292,7 +349,6 @@ class _AnalyticsViewState extends State<AnalyticsView> {
             ),
             const SizedBox(height: 24),
 
-            // Reactive ranked usage list updating layout seamlessly on bar tap
             _buildSectionHeader('Spectrum Hierarchy (${activeSelectedDay.dayLabel})'),
             _currentRenderedRankings.isEmpty
                 ? _buildGlassPanel(

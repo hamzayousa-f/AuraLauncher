@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:aura/features/home/widgets/notification_bell.dart';
 import 'package:aura/features/home/widgets/notification_center_panel.dart';
+import 'package:aura/features/blocker/data/blocker_service.dart';
+import 'package:aura/features/blocker/presentation/views/fluid_friction_overlay.dart';
 import 'package:aura/features/home/widgets/tiling_dashboard.dart';
 import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
@@ -596,76 +598,122 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
   }
 
   Widget _buildTitleAppRow({
-    required String appName,
-    required String packageName,
-    required bool isPermanent,
-    required IconData iconData,
-  }) {
-    final int minutes = _usageStats[packageName] ?? 0;
-    final Color usageColor = _getUsageColor(minutes);
-    final String displayTime = minutes >= 60 
-        ? '${(minutes / 60).floor()}h ${minutes % 60}m'
-        : '${minutes}m';
+  required String appName,
+  required String packageName,
+  required bool isPermanent,
+  required IconData iconData,
+}) {
+  final int minutes = _usageStats[packageName] ?? 0;
+  final Color usageColor = _getUsageColor(minutes);
 
-    final Uint8List? cachedBytes = _decodedIconCache[packageName];
+  final String displayTime = minutes >= 60
+      ? '${(minutes / 60).floor()}h ${minutes % 60}m'
+      : '${minutes}m';
 
-    const List<double> grayscaleMatrix = <double>[
-      0.21, 0.72, 0.07, 0, 0,
-      0.21, 0.72, 0.07, 0, 0,
-      0.21, 0.72, 0.07, 0, 0,
-      0,    0,    0,    0.45, 0, 
-    ];
+  final Uint8List? cachedBytes = _decodedIconCache[packageName];
 
-    return TactileButton(
-      onTap: () => LauncherService.launchApp(packageName),
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: isPermanent
-                  ? Icon(iconData, color: Colors.cyanAccent.withOpacity(0.75), size: 18)
-                  : cachedBytes != null 
-                      ? ColorFiltered(
-                          colorFilter: const ColorFilter.matrix(grayscaleMatrix),
-                          child: Image.memory(
-                            cachedBytes, 
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.low, 
-                            cacheWidth: 40,                   
-                          ),
-                        )
-                      : Icon(iconData, color: Colors.white30, size: 18),
+  const List<double> grayscaleMatrix = <double>[
+    0.21, 0.72, 0.07, 0, 0,
+    0.21, 0.72, 0.07, 0, 0,
+    0.21, 0.72, 0.07, 0, 0,
+    0,    0,    0,    0.45, 0,
+  ];
+
+  return TactileButton(
+    onTap: () async {
+
+      final result = await LauncherService.launchApp(packageName);
+
+      if (!mounted) return;
+
+      if (result.blocked) {
+
+        final profile =
+            BlockerService.instance.getProfileForPackage(packageName);
+
+        if (profile == null) return;
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FluidFrictionOverlay(
+              profile: profile,
+              onOverrideUnlocked: () async {
+
+                await LauncherService.launchApp(packageName);
+
+              },
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                appName,
-                style: TextStyle(
-                  color: isPermanent ? Colors.white.withOpacity(0.95) : Colors.white.withOpacity(0.8),
-                  fontSize: 15,
-                  fontWeight: isPermanent ? FontWeight.w500 : FontWeight.w400,
-                  letterSpacing: -0.1,
-                  decoration: TextDecoration.none,
-                ),
-              ),
-            ),
-            Text(
-              displayTime,
+          ),
+        );
+
+        return;
+      }
+
+      if (!result.success && result.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.error!),
+          ),
+        );
+      }
+    },
+    borderRadius: BorderRadius.circular(20),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: isPermanent
+                ? Icon(
+                    iconData,
+                    color: Colors.cyanAccent.withOpacity(.75),
+                    size: 18,
+                  )
+                : cachedBytes != null
+                    ? ColorFiltered(
+                        colorFilter:
+                            const ColorFilter.matrix(grayscaleMatrix),
+                        child: Image.memory(
+                          cachedBytes,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.low,
+                          cacheWidth: 40,
+                        ),
+                      )
+                    : Icon(
+                        iconData,
+                        color: Colors.white30,
+                        size: 18,
+                      ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              appName,
               style: TextStyle(
-                color: usageColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                letterSpacing: -0.2,
-                decoration: TextDecoration.none,
+                color: isPermanent
+                    ? Colors.white.withOpacity(.95)
+                    : Colors.white.withOpacity(.8),
+                fontSize: 15,
+                fontWeight:
+                    isPermanent ? FontWeight.w500 : FontWeight.w400,
               ),
             ),
-          ],
-        ),
+          ),
+          Text(
+            displayTime,
+            style: TextStyle(
+              color: usageColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

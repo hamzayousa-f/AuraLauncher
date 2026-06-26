@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../data/blocker_profile.dart';
-
+import '../../../../core/services/launcher_service.dart';
 class FluidFrictionOverlay extends StatefulWidget {
   final BlockerProfile profile;
   final VoidCallback onOverrideUnlocked;
@@ -178,10 +178,17 @@ class _FluidFrictionOverlayState extends State<FluidFrictionOverlay> with Ticker
                               minimumSize: const Size(double.infinity, 52),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              // Route execution anchor logic to target application process directly
-                            },
+                            onPressed: () async {
+
+  Navigator.pop(context);
+
+  widget.onOverrideUnlocked();
+
+  await LauncherService.launchApp(
+    widget.profile.packageId,
+  );
+
+},
                             child: const Text('Open Intentionally', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
                           ),
                           const SizedBox(height: 12),
