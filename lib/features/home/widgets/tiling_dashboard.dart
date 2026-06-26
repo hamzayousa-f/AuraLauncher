@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/shared/tactile_button.dart';
+import '../presentation/dashboard_view.dart';
 
 class TilingDashboard extends StatelessWidget {
   final Map<String, int> usageStats;
@@ -36,38 +38,67 @@ class TilingDashboard extends StatelessWidget {
     if (focusIndex < 85) focusColor = Colors.amberAccent.withOpacity(0.8);
     if (focusIndex < 60) focusColor = Colors.redAccent.withOpacity(0.8);
 
-    return Container(
-      height: 54,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.02),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildTile(
-              label: "SCREEN",
-              val: screenTimeDisplay,
-              color: finalMinutes >= 150 ? Colors.amberAccent.withOpacity(0.8) : Colors.white70,
+    return TactileButton(
+      onTap: () {
+        Navigator.of(context).push(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 280),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            opaque: false, // Essential to keep the baseline home view background visible
+            barrierDismissible: true,
+            pageBuilder: (context, animation, secondaryAnimation) => const AuraDashboardView(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                ),
+                child: child,
+              );
+            },
+          ),
+        );
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque, // Corrected: Catch clicks over transparent regions
+        child: Container(
+          height: 54,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.02),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.04),
+              width: 1.0,
             ),
           ),
-          Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
-          Expanded(
-            child: _buildTile(
-              label: "FOCUS INDEX",
-              val: "$focusIndex%",
-              color: focusColor,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildTile(
+                  label: "SCREEN",
+                  val: screenTimeDisplay,
+                  color: finalMinutes >= 150 ? Colors.amberAccent.withOpacity(0.8) : Colors.white70,
+                ),
+              ),
+              Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
+              Expanded(
+                child: _buildTile(
+                  label: "FOCUS INDEX",
+                  val: "$focusIndex%",
+                  color: focusColor,
+                ),
+              ),
+              Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
+              Expanded(
+                child: _buildTile(
+                  label: "ENERGY",
+                  val: isCharging ? "$batteryLevel% ⚡" : "$batteryLevel%",
+                  color: batteryLevel <= 20 ? Colors.redAccent.withOpacity(0.8) : Colors.white70,
+                ),
+              ),
+            ],
           ),
-          Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
-          Expanded(
-            child: _buildTile(
-              label: "ENERGY",
-              val: isCharging ? "$batteryLevel% ⚡" : "$batteryLevel%",
-              color: batteryLevel <= 20 ? Colors.redAccent.withOpacity(0.8) : Colors.white70,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
