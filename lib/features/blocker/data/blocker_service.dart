@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Added for Native Bridge Sync
 import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,9 @@ class BlockerService {
 
   static const String _profilesKey = 'blocker_profiles_v1';
   static const String _masterSwitchKey = 'master_focus_mode';
+  
+  // Platform Channel to broadcast rules straight to Android background contexts
+  static const MethodChannel _platformChannel = MethodChannel('com.aura.blocker/sync');
 
   Future<void> fetchInstalledApps() async {
     // Prevent re-fetching if already loaded
@@ -75,7 +79,7 @@ class BlockerService {
     }
   }
 
-  /// Save profiles to disk
+  /// Save profiles to disk and sync directly to native space
   Future<void> saveProfiles() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -88,6 +92,9 @@ class BlockerService {
       final String jsonString = jsonEncode(jsonList);
       
       await prefs.setString(_profilesKey, jsonString);
+      
+      // Sync rule mapping out to native layer
+      await _syncToNativeBackground();
     } catch (e) {
       print('Failed to save blocker profiles: $e');
     }
@@ -128,6 +135,23 @@ class BlockerService {
       // If not found, add it
       profiles.add(profile);
       await saveProfiles();
+    }
+  }
+
+  /// Pushes raw states down to Native Android SharedPreferences
+  Future<void> _syncToNativeBackground() async {
+    try {
+      // Create a clean primitive map for the native background engine
+      final Map<String, bool> restrictionStates = {
+        for (var p in profiles) p.packageId: p.isRestricted
+      };
+
+      await _platformChannel.invokeMethod('syncRules', {
+        'masterFocusMode': isMasterFocusModeActive,
+        'restrictions': restrictionStates,
+      });
+    } on PlatformException catch (e) {
+      print("Native bridge sync error: ${e.message}");
     }
   }
 }

@@ -32,6 +32,7 @@ import org.json.JSONArray
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.hamza.wellbeing.aura/launcher"
+    private val SYNC_CHANNEL = "com.aura.blocker/sync" // Match the Dart channel exactly
     private var packageRemovedReceiver: BroadcastReceiver? = null
 
         override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -39,6 +40,7 @@ class MainActivity: FlutterActivity() {
 
             registerUninstallReceiver()
 
+            // 1. Existing Launcher Channel Configuration
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
                 when (call.method) {
                     "launchSystemApp" -> {
@@ -70,7 +72,6 @@ class MainActivity: FlutterActivity() {
                         }.timeInMillis
 
                         val endTime = call.argument<Long>("endTime") ?: System.currentTimeMillis()
-
                         result.success(getDeviceScreenTimeMinutes(startTime, endTime))
                     }
                     "getTotalSystemScreenTime" -> {
@@ -126,8 +127,35 @@ class MainActivity: FlutterActivity() {
                         })
                         result.success(true)
                     }
-                    // FIXED: Explicitly handle platform channel cleanup fallback
                     else -> result.notImplemented()
+                }
+            }
+
+            // 2. NEW: Native Blocker Sync Mechanism
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYNC_CHANNEL).setMethodCallHandler { call, result ->
+                if (call.method == "syncRules") {
+                    try {
+                        val masterFocusMode = call.argument<Boolean>("masterFocusMode") ?: false
+                        val restrictions = call.argument<Map<String, Boolean>>("restrictions") ?: emptyMap()
+
+                        // Dump primitives into native SharedPreferences so the accessibility/overlay engine can access it instantly
+                        val nativePrefs = getSharedPreferences("com.hamza.wellbeing.aura.BLOCKER_PREFS", Context.MODE_PRIVATE)
+                        val editor = nativePrefs.edit()
+
+                        editor.putBoolean("master_focus_mode_active", masterFocusMode)
+
+                        // Flatten app profiles to individual access keys
+                        for ((pkg, isRestricted) in restrictions) {
+                            editor.putBoolean("block_pkg_$pkg", isRestricted)
+                        }
+                        editor.apply()
+
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SYNC_ERROR", e.message, null)
+                    }
+                } else {
+                    result.notImplemented()
                 }
             }
         }
@@ -194,8 +222,6 @@ class MainActivity: FlutterActivity() {
             return mode == AppOpsManager.MODE_ALLOWED
         }
 
-        // FIXED: Refactored away from queryAndAggregateUsageStats to precise queryEvents
-        // This removes time boundaries bleeding and matches your Zenith Dashboard completely.
         private fun getDeviceScreenTimeMinutes(startTimeFromFlutter: Long, endTimeFromFlutter: Long): Map<String, Int> {
             val statsMap = mutableMapOf<String, Int>()
             if (!isUsageStatsPermissionGranted()) return statsMap
@@ -215,7 +241,6 @@ class MainActivity: FlutterActivity() {
 
                 val appAccumulatedMs = HashMap<String, Long>()
 
-                // Track state exactly like your working computeAbsoluteScreenTimeMinutes function
                 var lastEventTime: Long = 0
                 var currentActivePackage: String? = null
 
@@ -223,13 +248,11 @@ class MainActivity: FlutterActivity() {
                     events.getNextEvent(event)
                     val pkgName = event.packageName ?: continue
 
-                    if (pkgName == packageName) continue // Skip Aura itself
+                    if (pkgName == packageName) continue
 
                         if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                            // Close out the previous app's session if it wasn't paused cleanly
                             if (currentActivePackage != null && lastEventTime > 0 && event.timeStamp > lastEventTime) {
                                 val duration = event.timeStamp - lastEventTime
-                                // Basic sanity guard: skip any tracking segment larger than a realistic 24-hour block
                                 if (duration in 1..86400000L) {
                                     val totalMs = appAccumulatedMs[currentActivePackage] ?: 0L
                                     appAccumulatedMs[currentActivePackage!!] = totalMs + duration
@@ -253,7 +276,6 @@ class MainActivity: FlutterActivity() {
                             }
                 }
 
-                // Catch the app currently open right now at the moment of query
                 if (currentActivePackage != null && lastEventTime > 0 && strictNow > lastEventTime) {
                     val trailingDuration = strictNow - lastEventTime
                     if (trailingDuration in 1..86400000L) {
@@ -262,7 +284,6 @@ class MainActivity: FlutterActivity() {
                     }
                 }
 
-                // Convert millisecond sums to minutes
                 for ((pkg, totalMs) in appAccumulatedMs) {
                     val minutes = (totalMs / (1000 * 60)).toInt()
                     if (minutes > 0) {
