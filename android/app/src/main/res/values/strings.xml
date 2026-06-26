@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Aura</string>
     <string name="admin_description">Allows Aura to turn off your screen instantly when you double-tap the wallpaper area.</string>
+    <string name="accessibility_description">Aura relies on this window monitor loop to enforce app time restrictions.</string>
 </resources>

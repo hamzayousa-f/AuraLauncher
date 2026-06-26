@@ -51,12 +51,16 @@ class LauncherService {
   }
 
   /// Launch app with optional blocker check
+  /// Launch app with optional blocker check
   static Future<LaunchResult> launchApp(String packageName) async {
     try {
       // Check if app should be blocked
       if (shouldBlockAppCallback != null) {
         final shouldBlock = await shouldBlockAppCallback!(packageName);
         if (shouldBlock) {
+          // FORCE KOTLIN TO PULL AURA TO FRONT IMMEDIATELY
+          await _channel.invokeMethod('bringLauncherToForeground');
+          
           return LaunchResult(
             success: false,
             blocked: true,
