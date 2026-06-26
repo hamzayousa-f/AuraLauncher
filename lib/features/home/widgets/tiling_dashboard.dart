@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class TilingDashboard extends StatelessWidget {
   final Map<String, int> usageStats;
-  final int totalSystemMinutes; // <-- Make sure this is here
+  final int totalSystemMinutes;
   final int notificationCount;
   final int batteryLevel;
   final bool isCharging;
@@ -18,11 +18,18 @@ class TilingDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String screenTimeDisplay = totalSystemMinutes >= 60 
-        ? '${(totalSystemMinutes / 60).floor()}h ${totalSystemMinutes % 60}m'
-        : '${totalSystemMinutes}m';
+    // FIX: Fall back to calculating totals from the usageStats map if totalSystemMinutes 
+    // arrives as 0 during the initial frame load sync. This binds the layout directly to both pipelines.
+    int finalMinutes = totalSystemMinutes;
+    if (finalMinutes == 0 && usageStats.isNotEmpty) {
+      finalMinutes = usageStats.values.fold(0, (sum, item) => sum + item);
+    }
 
-    int focusIndex = 100 - ((totalSystemMinutes / 120) * 10).round();
+    final String screenTimeDisplay = finalMinutes >= 60 
+        ? '${(finalMinutes / 60).floor()}h ${finalMinutes % 60}m'
+        : '${finalMinutes}m';
+
+    int focusIndex = 100 - ((finalMinutes / 120) * 10).round();
     focusIndex = focusIndex.clamp(0, 100);
 
     Color focusColor = Colors.cyanAccent.withOpacity(0.8);
@@ -41,7 +48,7 @@ class TilingDashboard extends StatelessWidget {
             child: _buildTile(
               label: "SCREEN",
               val: screenTimeDisplay,
-              color: totalSystemMinutes >= 150 ? Colors.amberAccent.withOpacity(0.8) : Colors.white70,
+              color: finalMinutes >= 150 ? Colors.amberAccent.withOpacity(0.8) : Colors.white70,
             ),
           ),
           Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),

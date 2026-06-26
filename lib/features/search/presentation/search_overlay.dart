@@ -7,6 +7,9 @@ import '../../../../core/shared/tactile_button.dart';
 import '../../../../core/services/launcher_service.dart';
 import '../../../../core/services/usage_service.dart';
 
+// Assuming standard mock or explicit model location format
+
+
 class SearchOverlay extends StatefulWidget {
   final List<AuraAppModel> preloadedApps;
   final VoidCallback onClose;
@@ -82,7 +85,6 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     super.dispose();
   }
 
-  /// Extracts system runtime usage data and pins to render context inline
   Future<void> _loadSearchTelemetryAndPins() async {
     try {
       final results = await Future.wait([
@@ -98,13 +100,12 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
         setState(() {
           _searchUsageStats = stats;
           _currentlyPinnedPackages = pinned;
-          _displayDataCache.clear(); // Clear cache when data updates
+          _displayDataCache.clear();
         });
       }
     } catch (_) {}
   }
 
-  /// Toggles the focus pinning structure via inline haptic pop updates
   Future<void> _togglePinState(String packageName, String appName) async {
     HapticFeedback.mediumImpact();
     
@@ -123,7 +124,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
     if (mounted) {
       setState(() {
         _currentlyPinnedPackages = pinned;
-        _displayDataCache.remove(packageName); // Invalidate cache for this app
+        _displayDataCache.remove(packageName);
       });
 
       ScaffoldMessenger.of(context).clearSnackBars();
@@ -176,7 +177,6 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
       }
     });
 
-    // Scroll to top when search results change
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
@@ -189,16 +189,13 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
   }
 
   _AppDisplayData _getDisplayData(AuraAppModel app) {
-    // Return cached data if available
     if (_displayDataCache.containsKey(app.packageName)) {
       final cached = _displayDataCache[app.packageName]!;
-      // Update isPinned status as it can change
       return cached.copyWith(
         isPinned: _currentlyPinnedPackages.contains(app.packageName),
       );
     }
 
-    // Compute and cache
     final int minutes = _searchUsageStats[app.packageName] ?? 0;
     final Color usageColor = _getUsageColor(minutes);
     final String displayTime = _formatTime(minutes);
@@ -256,7 +253,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                 padding: const EdgeInsets.fromLTRB(14.0, 10.0, 14.0, 0.0),
                 child: Column(
                   children: [
-                    // Search Bar
+                    // Search Bar Block
                     Row(
                       children: [
                         Expanded(
@@ -323,7 +320,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                     ),
                     const SizedBox(height: 14),
 
-                    // Results Header
+                    // Results Stats Descriptor
                     if (_filteredApps.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 6.0),
@@ -359,7 +356,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                       ),
                     const SizedBox(height: 4),
 
-                    // App List
+                    // App Core List Panel Container
                     Expanded(
                       child: GlassTheme.buildGlassPanel(
                         borderRadius: const BorderRadius.only(
@@ -402,6 +399,7 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
                             : ListView.builder(
                                 controller: _scrollController,
                                 itemCount: _filteredApps.length,
+                                // Enforcing precise item bounding size
                                 itemExtent: 56.0,
                                 padding: const EdgeInsets.only(top: 6, bottom: 28),
                                 physics: const BouncingScrollPhysics(),
@@ -436,7 +434,6 @@ class _SearchOverlayState extends State<SearchOverlay> with SingleTickerProvider
   }
 }
 
-// Separate widget for list items to prevent unnecessary rebuilds
 class _AppListItem extends StatelessWidget {
   final AuraAppModel app;
   final _AppDisplayData displayData;
@@ -459,14 +456,18 @@ class _AppListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasIcon = app.iconBytes != null;
 
-    return Column(
+    // FIX: Enclosed layout elements within a Stack to cleanly draw the top border divider 
+    // without scaling or overflowing the mandatory 56.0 tracking bounds.
+    return Stack(
       children: [
         if (showDivider)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          Positioned(
+            top: 0,
+            left: 16,
+            right: 16,
             child: Divider(
               color: Colors.white.withOpacity(0.04),
-              height: 1,
+              height: 0.5,
               thickness: 0.5,
             ),
           ),
@@ -474,15 +475,13 @@ class _AppListItem extends StatelessWidget {
           onLongPress: onLongPress,
           child: TactileButton(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(18),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 14.0,
-              ),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              height: 56.0,
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
               child: Row(
                 children: [
-                  // App Icon
+                  // App Icon Panel
                   SizedBox(
                     width: 24,
                     height: 24,
@@ -504,7 +503,7 @@ class _AppListItem extends StatelessWidget {
                   ),
                   const SizedBox(width: 14),
                   
-                  // App Name + Pin Icon
+                  // Text Context & Optional Pin Indicator
                   Expanded(
                     child: Row(
                       children: [
@@ -533,7 +532,7 @@ class _AppListItem extends StatelessWidget {
                     ),
                   ),
                   
-                  // Usage Time
+                  // Metric Telemetry Tag
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -566,7 +565,6 @@ class _AppListItem extends StatelessWidget {
   }
 }
 
-// Data class for cached display information
 class _AppDisplayData {
   final Color usageColor;
   final String displayTime;
