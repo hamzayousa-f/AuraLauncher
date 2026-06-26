@@ -44,16 +44,13 @@ class MainActivity: FlutterActivity() {
                 override fun onCreate(savedInstanceState: Bundle?) {
                     super.onCreate(savedInstanceState)
 
-                    // Force Window flags to punch through background launch limits on modern Android layers
+                    // REMOVED: setShowWhenLocked(true) and FLAG_SHOW_WHEN_LOCKED
+
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        setShowWhenLocked(true)
                         setTurnScreenOn(true)
                     } else {
                         @Suppress("DEPRECATION")
-                        window.addFlags(
-                            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                        )
+                        window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
                     }
 
                     window.addFlags(
@@ -283,11 +280,21 @@ class MainActivity: FlutterActivity() {
 
                 private fun handleIncomingIntent(intent: Intent) {
                     val blockedPackage = intent.getStringExtra("BLOCKED_PACKAGE_EXTRA")
+                    val isLimitReached = intent.getBooleanExtra("LIMIT_REACHED_EXTRA", false)
+
                     if (!blockedPackage.isNullOrEmpty()) {
                         lastBlockedPackageName = blockedPackage
-                        // Send to Flutter instantly via the cached messenger reference channel instance
-                        channelInstance?.invokeMethod("nativeAppBlockedIntercepted", blockedPackage)
+
+                        // Pack both parameters into a clean primitive map architecture
+                        val argumentsMap = hashMapOf<String, Any>(
+                            "packageName" to blockedPackage,
+                            "isLimitReached" to isLimitReached
+                        )
+
+                        // Send the complete map payload down to the warm Flutter runtime engine loop
+                        channelInstance?.invokeMethod("nativeAppBlockedIntercepted", argumentsMap)
                     }
+                }
                 }
 
                 private fun isUsageStatsPermissionGranted(): Boolean {
