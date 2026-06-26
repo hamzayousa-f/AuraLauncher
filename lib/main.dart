@@ -52,14 +52,16 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
   }
 
   void _routeToFrictionOverlay(String packageName) {
-    // Generate the blocker profile using correct properties to satisfy the hasExceededLimit getter rules
+    // We intentionally force currentAccumulatedMinutes to 35 here.
+    // Since 35 >= 30, the hasExceededLimit getter evaluates to TRUE 
+    // and satisfies the visibility rule required to display the overlay layout.
     final mockProfile = BlockerProfile(
       packageId: packageName,
       readableName: packageName.split('.').last.toUpperCase(),
       visualIcon: Icons.hourglass_empty_rounded,
       isRestricted: true,
       allocationLimitMinutes: 30,
-      currentAccumulatedMinutes: 0, // 0 / 30 retains hasExceededLimit as false
+      currentAccumulatedMinutes: 35, 
       IsSecurityEnforced: false,
       accessPinCode: "1234",
     );
@@ -83,5 +85,7 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-return const HomeView();  }
+    // Safely renders your real interactive dashboard layout as the home layer
+    return const HomeView(); 
+  }
 }
