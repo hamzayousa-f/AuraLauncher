@@ -47,22 +47,31 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
   void _initBlockerListener() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == "nativeAppBlockedIntercepted") {
-        final String? blockedPackage = call.arguments as String?;
-        if (blockedPackage != null) {
-          _routeToFrictionOverlay(blockedPackage);
+        // Parse arguments as a map layout from Kotlin
+        final Map<dynamic, dynamic>? args = call.arguments as Map<dynamic, dynamic>?;
+        if (args != null) {
+          final String? blockedPackage = args['packageName'] as String?;
+          final bool isLimitReached = args['isLimitReached'] as bool? ?? false;
+
+          if (blockedPackage != null) {
+            _routeToFrictionOverlay(blockedPackage, isLimitReached);
+          }
         }
       }
     });
   }
 
-  void _routeToFrictionOverlay(String packageName) {
-    final mockProfile = BlockerProfile(
+  void _routeToFrictionOverlay(String packageName, bool isLimitReached) {
+    // Dynamically adjust allocation maps depending on the true native intent parameters
+    final dynamicProfile = BlockerProfile(
       packageId: packageName,
       readableName: packageName.split('.').last.toUpperCase(),
       visualIcon: Icons.hourglass_empty_rounded,
       isRestricted: true,
       allocationLimitMinutes: 30,
-      currentAccumulatedMinutes: 35, // Forces hasExceededLimit = true
+      // If time limit is reached, set accumulation higher than limit to trigger your hard block UI.
+      // Otherwise, set it to 0 so FluidFrictionOverlay falls back to the 5-second countdown loop.
+      currentAccumulatedMinutes: isLimitReached ? 35 : 0, 
       IsSecurityEnforced: false,
       accessPinCode: "1234",
     );
@@ -72,7 +81,7 @@ class _AuraHomeScreenState extends State<AuraHomeScreen> {
       PageRouteBuilder(
         opaque: false,
         pageBuilder: (context, animation, secondaryAnimation) => FluidFrictionOverlay(
-          profile: mockProfile,
+          profile: dynamicProfile,
           onOverrideUnlocked: () {
             debugPrint("App override authorized for $packageName");
           },
