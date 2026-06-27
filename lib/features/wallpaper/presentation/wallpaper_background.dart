@@ -19,7 +19,7 @@ class WallpaperBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget backgroundWidget;
 
-    // 1. Strict Type Branching Configuration
+    // Strict Type Branching Configuration
     if (wallpaperType == 'file' && wallpaperPath.isNotEmpty && !wallpaperPath.startsWith('0x')) {
       final file = File(wallpaperPath);
       if (file.existsSync()) {
@@ -47,9 +47,7 @@ class WallpaperBackground extends StatelessWidget {
       behavior: HitTestBehavior.translucent,
       child: Stack(
         children: [
-          // Background layer
           Positioned.fill(child: backgroundWidget),
-          // Interface layout layer
           child,
         ],
       ),
