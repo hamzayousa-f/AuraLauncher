@@ -2,6 +2,35 @@ import 'package:flutter/material.dart';
 import '../../../../core/shared/tactile_button.dart';
 import '../presentation/dashboard_view.dart';
 
+// ─── Pre-computed colour constants ────────────────────────────────────────────
+
+const _kWhite02   = Color(0x05FFFFFF);
+const _kWhite04   = Color(0x0AFFFFFF);
+const _kWhite05   = Color(0x0DFFFFFF);
+const _kWhite20   = Color(0x33FFFFFF);
+const _kWhite70   = Color(0xB3FFFFFF);
+const _kAmber     = Color(0xCCFFD740);
+const _kCyan      = Color(0xCC84FFFF);
+const _kRed       = Color(0xCCFF5252);
+
+// ─── Route factory ────────────────────────────────────────────────────────────
+// PageRouteBuilder is single-use (disposed after pop), so we create a fresh
+// instance on every navigation call rather than caching it statically.
+
+PageRouteBuilder<void> _buildDashboardRoute() => PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 380),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      opaque: false,
+      barrierDismissible: true,
+      pageBuilder: (_, __, ___) => const AuraDashboardView(),
+      transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
+        child: child,
+      ),
+    );
+
+// ─── Widget ───────────────────────────────────────────────────────────────────
+
 class TilingDashboard extends StatelessWidget {
   final Map<String, int> usageStats;
   final int totalSystemMinutes;
@@ -18,82 +47,66 @@ class TilingDashboard extends StatelessWidget {
     required this.isCharging,
   });
 
+  int get _finalMinutes {
+    if (totalSystemMinutes != 0) return totalSystemMinutes;
+    if (usageStats.isEmpty) return 0;
+    return usageStats.values.fold(0, (sum, v) => sum + v);
+  }
+
+  String _screenTimeDisplay(int minutes) => minutes >= 60
+      ? '${minutes ~/ 60}h ${minutes % 60}m'
+      : '${minutes}m';
+
+  int _focusIndex(int minutes) =>
+      (100 - ((minutes / 120) * 10).round()).clamp(0, 100);
+
+  Color _focusColor(int index) {
+    if (index < 60) return _kRed;
+    if (index < 85) return _kAmber;
+    return _kCyan;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // FIX: Fall back to calculating totals from the usageStats map if totalSystemMinutes 
-    // arrives as 0 during the initial frame load sync. This binds the layout directly to both pipelines.
-    int finalMinutes = totalSystemMinutes;
-    if (finalMinutes == 0 && usageStats.isNotEmpty) {
-      finalMinutes = usageStats.values.fold(0, (sum, item) => sum + item);
-    }
-
-    final String screenTimeDisplay = finalMinutes >= 60 
-        ? '${(finalMinutes / 60).floor()}h ${finalMinutes % 60}m'
-        : '${finalMinutes}m';
-
-    int focusIndex = 100 - ((finalMinutes / 120) * 10).round();
-    focusIndex = focusIndex.clamp(0, 100);
-
-    Color focusColor = Colors.cyanAccent.withOpacity(0.8);
-    if (focusIndex < 85) focusColor = Colors.amberAccent.withOpacity(0.8);
-    if (focusIndex < 60) focusColor = Colors.redAccent.withOpacity(0.8);
+    final int minutes   = _finalMinutes;
+    final int focus     = _focusIndex(minutes);
+    final String screen = _screenTimeDisplay(minutes);
 
     return TactileButton(
-      onTap: () {
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 280),
-            reverseTransitionDuration: const Duration(milliseconds: 220),
-            opaque: false, // Essential to keep the baseline home view background visible
-            barrierDismissible: true,
-            pageBuilder: (context, animation, secondaryAnimation) => const AuraDashboardView(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                ),
-                child: child,
-              );
-            },
-          ),
-        );
-      },
+      // Fresh route instance on every tap — PageRouteBuilder is single-use.
+      onTap: () => Navigator.of(context).push(_buildDashboardRoute()),
       child: GestureDetector(
-        behavior: HitTestBehavior.opaque, // Corrected: Catch clicks over transparent regions
+        behavior: HitTestBehavior.opaque,
         child: Container(
           height: 54,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.02),
+            color: _kWhite02,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.04),
-              width: 1.0,
-            ),
+            border: Border.all(color: _kWhite04),
           ),
           child: Row(
             children: [
               Expanded(
-                child: _buildTile(
-                  label: "SCREEN",
-                  val: screenTimeDisplay,
-                  color: finalMinutes >= 150 ? Colors.amberAccent.withOpacity(0.8) : Colors.white70,
+                child: _Tile(
+                  label: 'SCREEN',
+                  val: screen,
+                  color: minutes >= 150 ? _kAmber : _kWhite70,
                 ),
               ),
-              Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
+              const _Divider(),
               Expanded(
-                child: _buildTile(
-                  label: "FOCUS INDEX",
-                  val: "$focusIndex%",
-                  color: focusColor,
+                child: _Tile(
+                  label: 'FOCUS INDEX',
+                  val: '$focus%',
+                  color: _focusColor(focus),
                 ),
               ),
-              Container(width: 1, height: 24, color: Colors.white.withOpacity(0.05)),
+              const _Divider(),
               Expanded(
-                child: _buildTile(
-                  label: "ENERGY",
-                  val: isCharging ? "$batteryLevel% ⚡" : "$batteryLevel%",
-                  color: batteryLevel <= 20 ? Colors.redAccent.withOpacity(0.8) : Colors.white70,
+                child: _Tile(
+                  label: 'ENERGY',
+                  val: isCharging ? '$batteryLevel% ⚡' : '$batteryLevel%',
+                  color: batteryLevel <= 20 ? _kRed : _kWhite70,
                 ),
               ),
             ],
@@ -102,15 +115,26 @@ class TilingDashboard extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _buildTile({required String label, required String val, required Color color}) {
+// ─── Tile ─────────────────────────────────────────────────────────────────────
+
+class _Tile extends StatelessWidget {
+  const _Tile({required this.label, required this.val, required this.color});
+
+  final String label;
+  final String val;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.2),
+          style: const TextStyle(
+            color: _kWhite20,
             fontSize: 9,
             fontWeight: FontWeight.w600,
             letterSpacing: 1.2,
@@ -129,4 +153,14 @@ class TilingDashboard extends StatelessWidget {
       ],
     );
   }
+}
+
+// ─── Divider ──────────────────────────────────────────────────────────────────
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) =>
+      const SizedBox(width: 1, height: 24, child: ColoredBox(color: _kWhite05));
 }
