@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../data/blocker_profile.dart';
 import '../../../../core/services/launcher_service.dart';
 
@@ -8,7 +10,11 @@ class FluidFrictionOverlay extends StatefulWidget {
   final BlockerProfile profile;
   final VoidCallback onOverrideUnlocked;
 
-  const FluidFrictionOverlay({super.key, required this.profile, required this.onOverrideUnlocked});
+  const FluidFrictionOverlay({
+    super.key, 
+    required this.profile, 
+    required this.onOverrideUnlocked
+  });
 
   @override
   State<FluidFrictionOverlay> createState() => _FluidFrictionOverlayState();
@@ -17,6 +23,8 @@ class FluidFrictionOverlay extends StatefulWidget {
 class _FluidFrictionOverlayState extends State<FluidFrictionOverlay> with TickerProviderStateMixin {
   late AnimationController _waveAnimationController;
   late AnimationController _fillFluidController;
+  
+  static const _channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
   
   int _countdownClock = 5;
   Timer? _countdownTimer;
@@ -29,7 +37,7 @@ class _FluidFrictionOverlayState extends State<FluidFrictionOverlay> with Ticker
     
     _waveAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2500),
     )..repeat();
 
     _fillFluidController = AnimationController(
@@ -67,12 +75,28 @@ class _FluidFrictionOverlayState extends State<FluidFrictionOverlay> with Ticker
       widget.onOverrideUnlocked();
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Allocation Limits Restructured Successfully'), backgroundColor: Colors.amber),
+        const SnackBar(
+          content: Text('Allocation Limits Restructured'), 
+          backgroundColor: Colors.amber,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } else {
+      HapticFeedback.vibrate();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Incorrect Enforced Pin'), backgroundColor: Colors.redAccent),
       );
+      _pinResetController.clear();
+    }
+  }
+
+  Future<void> _applyNativeBypass() async {
+    try {
+      await _channel.invokeMethod('tempBypassApp', {
+        'packageName': widget.profile.packageId,
+      });
+    } catch (e) {
+      debugPrint("Native Bypass Error: $e");
     }
   }
 
@@ -82,146 +106,207 @@ class _FluidFrictionOverlayState extends State<FluidFrictionOverlay> with Ticker
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: LayoutBuilder( // FIXED: Guarantees explicit width context boundaries to prevent layout fracturing
-        builder: (context, constraints) {
-          return Stack(
-            children: [
-              // Custom Fluid Liquid Simulator Painter Structure
-              AnimatedBuilder(
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          // THE FLUID BACKGROUND (Optimized with RepaintBoundary)
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
                 animation: Listenable.merge([_waveAnimationController, _fillFluidController]),
                 builder: (context, child) {
-                  return SizedBox(
-                    width: constraints.maxWidth,
-                    height: constraints.maxHeight,
-                    child: CustomPaint(
-                      size: Size(constraints.maxWidth, constraints.maxHeight),
-                      painter: FluidWavePainter(
-                        waveWaveformValue: _waveAnimationController.value,
-                        fluidVolumeFillLevel: hardLocked ? 1.0 : _fillFluidController.value,
-                        liquidColor: hardLocked 
-                            ? Colors.redAccent.withOpacity(0.15) 
-                            : Colors.cyanAccent.withOpacity(0.12),
-                      ),
+                  return CustomPaint(
+                    painter: FluidWavePainter(
+                      waveWaveformValue: _waveAnimationController.value,
+                      fluidVolumeFillLevel: hardLocked ? 1.0 : _fillFluidController.value,
+                      liquidColor: hardLocked 
+                          ? Colors.redAccent.withOpacity(0.18) 
+                          : Colors.cyanAccent.withOpacity(0.12),
                     ),
                   );
                 },
               ),
+            ),
+          ),
 
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // App Ident structural frame
-                      Column(
-                        children: [
+          // UI OVERLAY
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40.0),
+              child: Column(
+                children: [
+                  const SizedBox(height: 60),
+                  
+                  // Top Section: Label and Icon (Now Center Aligned)
+                  SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: Icon(
+                            widget.profile.visualIcon, 
+                            size: 42, 
+                            color: hardLocked ? Colors.redAccent : Colors.cyanAccent
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          widget.profile.readableName.toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white, 
+                            fontSize: 22, 
+                            fontWeight: FontWeight.w300,
+                            letterSpacing: 2
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          hardLocked ? 'DAILY LIMIT EXHAUSTED' : 'INTENTIONAL INTERVENTION',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: hardLocked ? Colors.redAccent : Colors.white24, 
+                            fontSize: 10, 
+                            letterSpacing: 2, 
+                            fontWeight: FontWeight.w700
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  // Bottom Section: Interaction (Center Aligned)
+                  SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      children: [
+                        if (hardLocked) ...[
+                          const Text(
+                            'You have reached your allocated time.\nReflection is required before reset.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.6),
+                          ),
                           const SizedBox(height: 40),
-                          Icon(widget.profile.visualIcon, size: 48, color: hardLocked ? Colors.redAccent : Colors.cyanAccent),
-                          const SizedBox(height: 16),
-                          Text(
-                            widget.profile.readableName,
-                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w300),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            hardLocked ? 'DAILY LIMIT REACHED' : 'INTENTIONAL INTERVENTION',
-                            style: TextStyle(
-                              color: hardLocked ? Colors.redAccent : Colors.white30, 
-                              fontSize: 11, 
-                              letterSpacing: 1.5, 
-                              fontWeight: FontWeight.w600
-                            ),
-                          ),
-                        ],
-                      ),
+                          
+                          if (widget.profile.IsSecurityEnforced) ...[
+                            _buildPinField(),
+                            const SizedBox(height: 24),
+                          ],
 
-                      // Core interaction hub logic blocks
-                      Column(
-                        children: [
-                          if (hardLocked) ...[
+                          _buildActionButton(
+                            label: 'Return to Hub',
+                            onPressed: () => Navigator.pop(context),
+                            isPrimary: false,
+                            color: Colors.redAccent,
+                          ),
+                        ] else ...[
+                          if (!_isDelaySequenceComplete) ...[
+                            Text(
+                              '0$_countdownClock',
+                              style: const TextStyle(
+                                fontFamily: 'JetBrains Mono', 
+                                color: Colors.white, 
+                                fontSize: 56, 
+                                fontWeight: FontWeight.w100
+                              ),
+                            ),
+                            const SizedBox(height: 8),
                             const Text(
-                              'You have exhausted your set usage allocation frame for this application.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.5),
-                            ),
-                            const SizedBox(height: 32),
-                            
-                            if (widget.profile.IsSecurityEnforced) ...[
-                              TextField(
-                                controller: _pinResetController,
-                                keyboardType: TextInputType.number,
-                                obscureText: true,
-                                maxLength: 4,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.white, fontFamily: 'JetBrains Mono', letterSpacing: 8),
-                                decoration: const InputDecoration(
-                                  hintText: 'PIN TO UNLOCK',
-                                  hintStyle: TextStyle(color: Colors.white24, letterSpacing: 1, fontSize: 12),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
-                                ),
-                                onChanged: (val) {
-                                  if (val.length == 4) _processSecureReset();
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Colors.redAccent),
-                                minimumSize: const Size(double.infinity, 50),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Return to Home Screen', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w500)),
+                              'Acknowledge your decision path', 
+                              style: TextStyle(color: Colors.white24, fontSize: 12, letterSpacing: 0.5)
                             ),
                           ] else ...[
-                            // Dynamic 5s wait block layout
-                            if (!_isDelaySequenceComplete) ...[
-                              Text(
-                                '$_countdownClock',
-                                style: const TextStyle(fontFamily: 'JetBrains Mono', color: Colors.white, fontSize: 48, fontWeight: FontWeight.w200),
+                            _buildActionButton(
+                              label: 'Continue to App',
+                              onPressed: () async {
+                                await _applyNativeBypass();
+                                if (context.mounted) Navigator.pop(context);
+                                widget.onOverrideUnlocked();
+                                await LauncherService.launchApp(widget.profile.packageId);
+                              },
+                              isPrimary: true,
+                              color: Colors.cyanAccent,
+                            ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text(
+                                'Changed my mind', 
+                                style: TextStyle(color: Colors.white38, fontSize: 13)
                               ),
-                              const SizedBox(height: 12),
-                              const Text('Acknowledge your decision path...', style: TextStyle(color: Colors.white24, fontSize: 13)),
-                            ] else ...[
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.cyanAccent,
-                                  minimumSize: const Size(double.infinity, 52),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: () async {
-                                  // Clear the route layout first
-                                  if (context.mounted) Navigator.pop(context);
-                                  
-                                  widget.onOverrideUnlocked();
-
-                                  // Fire layout target app launch task
-                                  await LauncherService.launchApp(
-                                    widget.profile.packageId,
-                                  );
-                                },
-                                child: const Text('Open Intentionally', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
-                              ),
-                              const SizedBox(height: 12),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Changed my Mind', style: TextStyle(color: Colors.white38)),
-                              )
-                            ]
-                          ],
-                          const SizedBox(height: 40),
+                            )
+                          ]
                         ],
-                      )
-                    ],
-                  ),
-                ),
-              )
-            ],
-          );
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPinField() {
+    return Container(
+      width: 200,
+      child: TextField(
+        controller: _pinResetController,
+        keyboardType: TextInputType.number,
+        obscureText: true,
+        maxLength: 4,
+        textAlign: TextAlign.center,
+        cursorColor: Colors.redAccent,
+        style: const TextStyle(
+          color: Colors.white, 
+          fontSize: 24,
+          fontFamily: 'JetBrains Mono', 
+          letterSpacing: 12
+        ),
+        decoration: const InputDecoration(
+          counterText: "",
+          hintText: 'PIN',
+          hintStyle: TextStyle(color: Colors.white12, letterSpacing: 2, fontSize: 14),
+          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white12)),
+          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+        ),
+        onChanged: (val) {
+          if (val.length == 4) _processSecureReset();
         },
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label, 
+    required VoidCallback onPressed, 
+    required bool isPrimary,
+    required Color color,
+  }) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isPrimary ? color : Colors.transparent,
+        foregroundColor: isPrimary ? Colors.black : color,
+        elevation: 0,
+        side: isPrimary ? BorderSide.none : BorderSide(color: color.withOpacity(0.5)),
+        minimumSize: const Size(double.infinity, 56),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      onPressed: onPressed,
+      child: Text(
+        label, 
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, letterSpacing: 0.5)
       ),
     );
   }
@@ -232,24 +317,33 @@ class FluidWavePainter extends CustomPainter {
   final double fluidVolumeFillLevel;
   final Color liquidColor;
 
-  FluidWavePainter({required this.waveWaveformValue, required this.fluidVolumeFillLevel, required this.liquidColor});
+  FluidWavePainter({
+    required this.waveWaveformValue, 
+    required this.fluidVolumeFillLevel, 
+    required this.liquidColor
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Safety guard to halt paint calculation if sizing dimensions fail initialization
     if (size.width == 0 || size.height == 0) return;
 
-    final paint = Paint()..color = liquidColor;
-    final path = Path();
+    final paint = Paint()
+      ..color = liquidColor
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
 
+    final path = Path();
     double targetHeight = size.height * (1.0 - fluidVolumeFillLevel);
+    
+    // Wave smoothing logic: Higher amplitude in center, flatter at edges
+    double dynamicAmplitude = 15 * sin(fluidVolumeFillLevel * pi);
 
     path.moveTo(0, targetHeight);
     
-    // Explicit interpolation bounds stepping logic
-    for (double x = 0; x <= size.width; x++) {
+    // OPTIMIZATION: Increment by 4 instead of 1 to reduce vertex calculation
+    for (double x = 0; x <= size.width; x += 4) {
       double waveSine = sin((x / size.width * 2 * pi) + (waveWaveformValue * 2 * pi));
-      double y = targetHeight + (waveSine * 12); 
+      double y = targetHeight + (waveSine * dynamicAmplitude); 
       path.lineTo(x, y);
     }
 

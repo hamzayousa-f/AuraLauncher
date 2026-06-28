@@ -11,6 +11,7 @@ import 'package:aura/features/search/presentation/search_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/theme/glass_theme.dart';
 import '../../../core/shared/tactile_button.dart';
 import '../../wallpaper/presentation/wallpaper_background.dart';
@@ -28,16 +29,12 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late AnimationController _gestureAnimationController;
-  
-  // Use a ValueNotifier to isolate swipe animations from the main layout tree
   final ValueNotifier<double> _dragValueNotifier = ValueNotifier<double>(0.0);
   
   bool _isSearchOpen = false;
   Map<String, int> _usageStats = {};
   List<Map<String, String>> _pinnedAppsList = [];
   List<AuraAppModel> _cachedSystemApps = [];
-  
-  // High-performance image cache memory map to prevent repeated base64 decoding loops
   final Map<String, Uint8List> _decodedIconCache = {};
   
   String _wallpaperType = 'solid';
@@ -50,6 +47,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
   
   bool _isSyncingMetrics = false;
   bool _isAppCacheLoaded = false;
+  bool _isPickingWallpaper = false;
 
   @override
   void initState() {
@@ -77,13 +75,40 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (!_isPickingWallpaper) {
+        _loadWallpaperConfig();
+      }
       _loadVolatileSystemMetrics();
     }
   }
 
   Future<void> _initialBootSync() async {
-    await _loadVolatileSystemMetrics();
-    await _buildAppStructureCache();
+    await _loadWallpaperConfig(); 
+    
+    // Unblock Main UI Pipeline Loop Frame
+    Future.microtask(() async {
+      await _loadVolatileSystemMetrics(); 
+      await _buildAppStructureCache();
+    });
+  }
+
+  Future<void> _loadWallpaperConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final type = prefs.getString('wallpaper_type') ?? 'solid';
+      final path = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
+      
+      debugPrint("🎨 Aura Config Sync: Loading Type ($type), Path ($path)");
+
+      if (mounted) {
+        setState(() {
+          _wallpaperType = type;
+          _wallpaperPath = path;
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ Aura Error: Failed loading wallpaper config: $e");
+    }
   }
 
   Future<void> _loadVolatileSystemMetrics() async {
@@ -91,16 +116,18 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
     _isSyncingMetrics = true;
 
     try {
-      // 1. Fetch raw usage data safely with an isolated catch block
+      final prefs = await SharedPreferences.getInstance();
       Map<String, int> stats = {};
+      
       try {
-        stats = await UsageService.getZenithUsageData();
+        stats = await UsageService.getZenithUsageData().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => <String, int>{},
+        );
       } catch (e) {
-        debugPrint("❌ Aura Error: UsageService.getZenithUsageData() failed: $e");
+        debugPrint("❌ Aura Error: UsageService timed out or dropped: $e");
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      
       int nativeNotifications = 0;
       int nativeBattery = 100;
       bool nativeCharging = false;
@@ -108,11 +135,9 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
 
       const channel = MethodChannel('com.hamza.wellbeing.aura/launcher');
       
-      // 2. Invoke channels safely one-by-one to prevent one native failure from breaking the others
       try {
-        final dynamic screenTimeResult = await channel.invokeMethod('getTotalSystemScreenTime');
+        final dynamic screenTimeResult = await channel.invokeMethod('getTotalSystemScreenTime').timeout(const Duration(milliseconds: 300));
         if (screenTimeResult != null) {
-          // Coerce both int and double safely to avoid casting crashes
           nativeTotalScreenTime = (screenTimeResult as num).toInt();
         }
       } catch (e) {
@@ -120,7 +145,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
       }
 
       try {
-        final dynamic batteryData = await channel.invokeMethod('getBatteryStatus');
+        final dynamic batteryData = await channel.invokeMethod('getBatteryStatus').timeout(const Duration(milliseconds: 300));
         if (batteryData != null && batteryData is Map) {
           nativeBattery = (batteryData['level'] ?? 100 as num).toInt();
           nativeCharging = batteryData['isCharging'] ?? false;
@@ -130,7 +155,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
       }
 
       try {
-        final dynamic notificationResult = await channel.invokeMethod('getNotificationCount');
+        final dynamic notificationResult = await channel.invokeMethod('getNotificationCount').timeout(const Duration(milliseconds: 300));
         if (notificationResult != null) {
           nativeNotifications = (notificationResult as num).toInt();
         }
@@ -145,8 +170,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
           _batteryLevel = nativeBattery;
           _isCharging = nativeCharging;
           _notificationCount = nativeNotifications;
-          _wallpaperType = prefs.getString('wallpaper_type') ?? 'solid';
-          _wallpaperPath = prefs.getString('wallpaper_path') ?? '0xFF0A0A0A';
         });
       }
       
@@ -189,7 +212,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
       
       if (match.packageName.isEmpty) continue;
 
-      // Handle raw bytecode translation directly during initialization context instead of build loop
       if (match.iconBytes != null && !_decodedIconCache.containsKey(pkg)) {
         _decodedIconCache[pkg] = match.iconBytes!;
       }
@@ -223,7 +245,7 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black54,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return GlassTheme.buildGlassPanel(
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(32),
@@ -255,19 +277,57 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
               
               TactileButton(
                 onTap: () async {
-                  final ImagePicker picker = ImagePicker();
-                  final XFile? image = await picker.pickImage(
-                    source: ImageSource.gallery,
-                    imageQuality: 100,
-                  );
+                  try {
+                    // Pop sheet instantly to prevent drawing lifecycle interaction holds
+                    if (sheetContext.mounted) {
+                      Navigator.of(sheetContext).pop();
+                    }
 
-                  if (image != null) {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('wallpaper_type', 'file');
-                    await prefs.setString('wallpaper_path', image.path);
-                    
-                    if (context.mounted) Navigator.pop(context);
-                    _initialBootSync();
+                    // Let layout components process sheet closing frame safely
+                    await Future.delayed(const Duration(milliseconds: 100));
+
+                    if (mounted) {
+                      setState(() => _isPickingWallpaper = true);
+                    }
+
+                    debugPrint("🚀 Triggering native ImagePicker channel...");
+                    final ImagePicker picker = ImagePicker();
+                    final XFile? image = await picker.pickImage(
+                      source: ImageSource.gallery,
+                      imageQuality: 95,
+                    );
+
+                    if (image != null) {
+                      debugPrint("📸 Native picker returned file path: ${image.path}");
+                      
+                      final Directory appDocDir = await getApplicationDocumentsDirectory();
+                      final String permanentPath = '${appDocDir.path}/wallpaper_${DateTime.now().millisecondsSinceEpoch}.png';
+                      
+                      final File savedFile = await File(image.path).copy(permanentPath);
+                      
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('wallpaper_type', 'file');
+                      await prefs.setString('wallpaper_path', savedFile.path);
+                      await prefs.commit(); 
+
+                      debugPrint("✅ Saved to Sandbox: ${savedFile.path}");
+                      
+                      if (mounted) {
+                        setState(() {
+                          _wallpaperType = 'file';
+                          _wallpaperPath = savedFile.path;
+                        });
+                      }
+                    } else {
+                      debugPrint("⚠️ ImagePicker cancelled by user.");
+                    }
+                  } catch (err, stack) {
+                    debugPrint("❌ CRITICAL ImagePicker Platform Failure: $err");
+                    debugPrint("Stacktrace: $stack");
+                  } finally {
+                    if (mounted) {
+                      setState(() => _isPickingWallpaper = false);
+                    }
                   }
                 },
                 borderRadius: BorderRadius.circular(16),
@@ -289,8 +349,18 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setString('wallpaper_type', 'solid');
                   await prefs.setString('wallpaper_path', '0xFF0A0A0A');
-                  if (context.mounted) Navigator.pop(context);
-                  _initialBootSync();
+                  await prefs.commit();
+                  
+                  if (mounted) {
+                    setState(() {
+                      _wallpaperType = 'solid';
+                      _wallpaperPath = '0xFF0A0A0A';
+                    });
+                  }
+
+                  if (sheetContext.mounted) {
+                    Navigator.of(sheetContext).pop();
+                  }
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: Padding(
@@ -398,11 +468,10 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
           },
           child: Stack(
             children: [
-              // 1. Isolate the animating background using ValueListenableBuilder
               ValueListenableBuilder<double>(
                 valueListenable: _dragValueNotifier,
                 builder: (context, dragValue, child) {
-                  double blurSigma = dragValue * 6.0; // Optimized maximum blur radius limits
+                  double blurSigma = dragValue * 6.0; 
                   double parallaxOffset = dragValue * 20.0;       
                   double wallpaperScale = 1.0 + (dragValue * 0.02);
 
@@ -435,7 +504,6 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
                 },
               ),
 
-              // 2. Static Home Layout Structure (No longer rebuilds on touch movements!)
               Positioned.fill(
                 child: SafeArea(
                   child: Padding(
@@ -598,122 +666,96 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver, Single
   }
 
   Widget _buildTitleAppRow({
-  required String appName,
-  required String packageName,
-  required bool isPermanent,
-  required IconData iconData,
-}) {
-  final int minutes = _usageStats[packageName] ?? 0;
-  final Color usageColor = _getUsageColor(minutes);
+    required String appName,
+    required String packageName,
+    required bool isPermanent,
+    required IconData iconData,
+  }) {
+    final int minutes = _usageStats[packageName] ?? 0;
+    final Color usageColor = _getUsageColor(minutes);
 
-  final String displayTime = minutes >= 60
-      ? '${(minutes / 60).floor()}h ${minutes % 60}m'
-      : '${minutes}m';
+    final String displayTime = minutes >= 60
+        ? '${(minutes / 60).floor()}h ${minutes % 60}m'
+        : '${minutes}m';
 
-  final Uint8List? cachedBytes = _decodedIconCache[packageName];
+    final Uint8List? cachedBytes = _decodedIconCache[packageName];
 
-  const List<double> grayscaleMatrix = <double>[
-    0.21, 0.72, 0.07, 0, 0,
-    0.21, 0.72, 0.07, 0, 0,
-    0.21, 0.72, 0.07, 0, 0,
-    0,    0,    0,    0.45, 0,
-  ];
+    const List<double> grayscaleMatrix = <double>[
+      0.21, 0.72, 0.07, 0, 0,
+      0.21, 0.72, 0.07, 0, 0,
+      0.21, 0.72, 0.07, 0, 0,
+      0,    0,    0,    0.45, 0,
+    ];
 
-  return TactileButton(
-    onTap: () async {
+    return TactileButton(
+      onTap: () async {
+        final result = await LauncherService.launchApp(packageName);
+        if (!mounted) return;
 
-      final result = await LauncherService.launchApp(packageName);
+        if (result.blocked) {
+          final profile = BlockerService.instance.getProfileForPackage(packageName);
+          if (profile == null) return;
 
-      if (!mounted) return;
-
-      if (result.blocked) {
-
-        final profile =
-            BlockerService.instance.getProfileForPackage(packageName);
-
-        if (profile == null) return;
-
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => FluidFrictionOverlay(
-              profile: profile,
-              onOverrideUnlocked: () async {
-
-                await LauncherService.launchApp(packageName);
-
-              },
-            ),
-          ),
-        );
-
-        return;
-      }
-
-      if (!result.success && result.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.error!),
-          ),
-        );
-      }
-    },
-    borderRadius: BorderRadius.circular(20),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: isPermanent
-                ? Icon(
-                    iconData,
-                    color: Colors.cyanAccent.withOpacity(.75),
-                    size: 18,
-                  )
-                : cachedBytes != null
-                    ? ColorFiltered(
-                        colorFilter:
-                            const ColorFilter.matrix(grayscaleMatrix),
-                        child: Image.memory(
-                          cachedBytes,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.low,
-                          cacheWidth: 40,
-                        ),
-                      )
-                    : Icon(
-                        iconData,
-                        color: Colors.white30,
-                        size: 18,
-                      ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              appName,
-              style: TextStyle(
-                color: isPermanent
-                    ? Colors.white.withOpacity(.95)
-                    : Colors.white.withOpacity(.8),
-                fontSize: 15,
-                fontWeight:
-                    isPermanent ? FontWeight.w500 : FontWeight.w400,
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FluidFrictionOverlay(
+                profile: profile,
+                onOverrideUnlocked: () async {
+                  await LauncherService.launchApp(packageName);
+                },
               ),
             ),
-          ),
-          Text(
-            displayTime,
-            style: TextStyle(
-              color: usageColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+          );
+          return;
+        }
+
+        if (!result.success && result.error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.error!)),
+          );
+        }
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: isPermanent
+                  ? Icon(iconData, color: Colors.cyanAccent.withOpacity(.75), size: 18)
+                  : cachedBytes != null
+                      ? ColorFiltered(
+                          colorFilter: const ColorFilter.matrix(grayscaleMatrix),
+                          child: Image.memory(
+                            cachedBytes,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.low,
+                            cacheWidth: 40,
+                          ),
+                        )
+                      : Icon(iconData, color: Colors.white30, size: 18),
             ),
-          ),
-        ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                appName,
+                style: TextStyle(
+                  color: isPermanent ? Colors.white.withOpacity(.95) : Colors.white.withOpacity(.8),
+                  fontSize: 15,
+                  fontWeight: isPermanent ? FontWeight.w500 : FontWeight.w400,
+                ),
+              ),
+            ),
+            Text(
+              displayTime,
+              style: TextStyle(color: usageColor, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

@@ -78,6 +78,18 @@ class MainActivity: FlutterActivity() {
                                     result.error("LAUNCH_FAILED", "Could not execute intent", null)
                                 }
                             }
+                            "tempBypassApp" -> {
+                                val packageName = call.argument<String>("packageName")
+                                if (packageName != null) {
+                                    // Set the static companion bypass attributes
+                                    AuraBlockerService.temporaryBypassPackage = packageName
+                                    AuraBlockerService.bypassTimestamp = System.currentTimeMillis()
+                                    result.success(true)
+                                } else {
+                                    result.error("INVALID_ARGUMENT", "Package name was null", null)
+                                }
+                            }
+
                             "getInstalledApps" -> {
                                 result.success(fetchInstalledApplications())
                             }
@@ -295,7 +307,7 @@ class MainActivity: FlutterActivity() {
                         channelInstance?.invokeMethod("nativeAppBlockedIntercepted", argumentsMap)
                     }
                 }
-                }
+
 
                 private fun isUsageStatsPermissionGranted(): Boolean {
                     val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager

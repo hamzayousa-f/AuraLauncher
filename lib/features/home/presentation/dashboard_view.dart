@@ -6,18 +6,20 @@ import 'package:flutter/material.dart';
 import '../../../../core/shared/tactile_button.dart';
 import '../../../../core/services/usage_service.dart';
 
+// ─── Data models ─────────────────────────────────────────────────────────────
+
 class AuraPieSegment {
   final String label;
   final Duration duration;
   final Color color;
-  AuraPieSegment({required this.label, required this.duration, required this.color});
+  const AuraPieSegment({required this.label, required this.duration, required this.color});
 }
 
 class AuraCategorySummary {
   final String name;
   final Duration duration;
   final double percentage;
-  AuraCategorySummary({required this.name, required this.duration, required this.percentage});
+  const AuraCategorySummary({required this.name, required this.duration, required this.percentage});
 }
 
 class AuraTopAppItem {
@@ -26,8 +28,36 @@ class AuraTopAppItem {
   final String percentage;
   final IconData fallbackIcon;
   final Color markerColor;
-  AuraTopAppItem({required this.name, required this.duration, required this.percentage, required this.fallbackIcon, required this.markerColor});
+  const AuraTopAppItem({
+    required this.name,
+    required this.duration,
+    required this.percentage,
+    required this.fallbackIcon,
+    required this.markerColor,
+  });
 }
+
+// ─── Pre-computed constants ──────────────────────────────────────────────
+
+const _kWhite02  = Color(0x05FFFFFF);
+const _kWhite03  = Color(0x08FFFFFF);
+const _kWhite04  = Color(0x0AFFFFFF);
+const _kWhite05  = Color(0x0DFFFFFF);
+const _kWhite06  = Color(0x0FFFFFFF);
+const _kWhite30  = Color(0x4DFFFFFF);
+const _kWhite38  = Color(0x61FFFFFF);
+const _kWhite40  = Color(0x66FFFFFF);
+const _kWhite70  = Color(0xB3FFFFFF);
+const _kTrackColor = Color(0x0AFFFFFF);
+
+const List<Color> _kAuraPalette = [
+  Color(0xFF818CF8),
+  Color(0xFF60A5FA),
+  Color(0xFF34D399),
+  Color(0xFFFBBF24),
+];
+
+// ─── Main widget ──────────────────────────────────────────────────────────────
 
 class AuraDashboardView extends StatefulWidget {
   const AuraDashboardView({super.key});
@@ -36,122 +66,140 @@ class AuraDashboardView extends StatefulWidget {
   State<AuraDashboardView> createState() => _AuraDashboardViewState();
 }
 
-class _AuraDashboardViewState extends State<AuraDashboardView> {
-  int _activeTabIndex = 0; 
+class _AuraDashboardViewState extends State<AuraDashboardView>
+    with SingleTickerProviderStateMixin {
+  late final PageController _pageController;
+  double _currentPageOffset = 0.0;
   bool _isLoading = true;
-  
-  Duration _totalScreentime = Duration.zero;
-  List<AuraPieSegment> _segments = [];
-  List<AuraCategorySummary> _categories = [];
-  List<AuraTopAppItem> _topApps = [];
+  bool _transitionFinished = false;
 
-  final List<Color> _auraPalette = [
-    const Color(0xFF818CF8),
-    const Color(0xFF60A5FA),
-    const Color(0xFF34D399),
-    const Color(0xFFFBBF24),
-  ];
+  Duration _totalScreentime = Duration.zero;
+  List<AuraPieSegment> _segments = const [];
+  List<AuraCategorySummary> _categories = const [];
+  List<AuraTopAppItem> _topApps = const [];
+
+  late final AnimationController _backdropController;
+  late final Animation<double> _backdropOpacity;
 
   @override
   void initState() {
     super.initState();
-    _fetchRealTelemetry();
+    _pageController = PageController(initialPage: 0);
+    _pageController.addListener(_handlePageScrollMetrics);
+
+    _backdropController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _backdropOpacity = CurvedAnimation(
+      parent: _backdropController,
+      curve: Curves.easeOut,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (mounted) {
+        setState(() => _transitionFinished = true);
+        _backdropController.forward();
+        _fetchRealTelemetry();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.removeListener(_handlePageScrollMetrics);
+    _pageController.dispose();
+    _backdropController.dispose();
+    super.dispose();
+  }
+
+  void _handlePageScrollMetrics() {
+    if (_pageController.hasClients) {
+      setState(() {
+        _currentPageOffset = _pageController.page ?? 0.0;
+      });
+    }
   }
 
   Future<void> _fetchRealTelemetry() async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+    
     final Map<String, int> rawStats = await UsageService.getZenithUsageData();
+    if (!mounted) return;
 
     if (rawStats.isEmpty) {
-      setState(() {
-        _totalScreentime = Duration.zero;
-        _segments = [];
-        _categories = [];
-        _topApps = [];
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
       return;
     }
 
-    int calculatedTotalMinutes = rawStats.values.fold(0, (sum, mins) => sum + mins);
-    _totalScreentime = Duration(minutes: calculatedTotalMinutes);
-
+    final int totalMinutes = rawStats.values.fold(0, (s, v) => s + v);
     final List<MapEntry<String, int>> sortedApps = rawStats.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    final int itemsToTake = min(sortedApps.length, 4);
+    int dynamicMinutesSum = 0;
     final List<AuraTopAppItem> processedApps = [];
     final List<AuraPieSegment> processedSegments = [];
-    int itemsToTake = min(sortedApps.length, 4);
-    int dynamicMinutesSum = 0;
 
     for (int i = 0; i < sortedApps.length; i++) {
       final entry = sortedApps[i];
       final String readableName = _parsePackageToAppName(entry.key);
       final Duration appDuration = Duration(minutes: entry.value);
-      final double appPercent = calculatedTotalMinutes > 0 ? (entry.value / calculatedTotalMinutes) * 100 : 0;
+      final double appPercent = totalMinutes > 0 ? (entry.value / totalMinutes) * 100 : 0;
 
       if (i < itemsToTake) {
         dynamicMinutesSum += entry.value;
-        final Color assignedColor = _auraPalette[i % _auraPalette.length];
-
-        processedApps.add(
-          AuraTopAppItem(
-            name: readableName,
-            duration: appDuration,
-            percentage: '${appPercent.toStringAsFixed(0)}%',
-            fallbackIcon: _getCategoryIcon(entry.key),
-            markerColor: assignedColor,
-          ),
-        );
-
-        processedSegments.add(
-          AuraPieSegment(label: readableName, duration: appDuration, color: assignedColor),
-        );
+        final Color assignedColor = _kAuraPalette[i % _kAuraPalette.length];
+        processedApps.add(AuraTopAppItem(
+          name: readableName,
+          duration: appDuration,
+          percentage: '${appPercent.toStringAsFixed(0)}%',
+          fallbackIcon: _getCategoryIcon(entry.key),
+          markerColor: assignedColor,
+        ));
+        processedSegments.add(AuraPieSegment(
+          label: readableName,
+          duration: appDuration,
+          color: assignedColor,
+        ));
       }
     }
 
-    if (calculatedTotalMinutes > dynamicMinutesSum) {
-      processedSegments.add(
-        AuraPieSegment(
-          label: 'Others',
-          duration: Duration(minutes: calculatedTotalMinutes - dynamicMinutesSum),
-          color: Colors.white.withOpacity(0.06),
-        ),
-      );
+    if (totalMinutes > dynamicMinutesSum) {
+      processedSegments.add(AuraPieSegment(
+        label: 'Others',
+        duration: Duration(minutes: totalMinutes - dynamicMinutesSum),
+        color: _kWhite06,
+      ));
     }
 
-    final Map<String, int> categoryAggregator = {
-      'Social Media': 0, 'Productivity': 0, 'Entertainment': 0, 'Utilities': 0,
-    };
-
-    rawStats.forEach((pkg, mins) {
-      final String lowerPkg = pkg.toLowerCase();
-      if (lowerPkg.contains('instagram') || lowerPkg.contains('facebook') || lowerPkg.contains('twitter') || lowerPkg.contains('whatsapp')) {
-        categoryAggregator['Social Media'] = categoryAggregator['Social Media']! + mins;
-      } else if (lowerPkg.contains('youtube') || lowerPkg.contains('netflix') || lowerPkg.contains('spotify')) {
-        categoryAggregator['Entertainment'] = categoryAggregator['Entertainment']! + mins;
-      } else if (lowerPkg.contains('studio') || lowerPkg.contains('github') || lowerPkg.contains('flutter')) {
-        categoryAggregator['Productivity'] = categoryAggregator['Productivity']! + mins;
+    final Map<String, int> catMap = {'Social Media': 0, 'Productivity': 0, 'Entertainment': 0, 'Utilities': 0};
+    for (final e in rawStats.entries) {
+      final String p = e.key.toLowerCase();
+      if (p.contains('instagram') || p.contains('facebook') || p.contains('twitter') || p.contains('whatsapp')) {
+        catMap['Social Media'] = catMap['Social Media']! + e.value;
+      } else if (p.contains('youtube') || p.contains('netflix') || p.contains('spotify')) {
+        catMap['Entertainment'] = catMap['Entertainment']! + e.value;
+      } else if (p.contains('studio') || p.contains('github') || p.contains('flutter')) {
+        catMap['Productivity'] = catMap['Productivity']! + e.value;
       } else {
-        categoryAggregator['Utilities'] = categoryAggregator['Utilities']! + mins;
+        catMap['Utilities'] = catMap['Utilities']! + e.value;
       }
-    });
+    }
 
-    final List<AuraCategorySummary> processedCategories = [];
-    categoryAggregator.forEach((catName, mins) {
-      if (mins > 0) {
-        processedCategories.add(
+    final List<AuraCategorySummary> processedCategories = [
+      for (final e in catMap.entries)
+        if (e.value > 0)
           AuraCategorySummary(
-            name: catName,
-            duration: Duration(minutes: mins),
-            percentage: calculatedTotalMinutes > 0 ? mins / calculatedTotalMinutes : 0,
+            name: e.key,
+            duration: Duration(minutes: e.value),
+            percentage: totalMinutes > 0 ? e.value / totalMinutes : 0,
           ),
-        );
-      }
-    });
-    processedCategories.sort((a, b) => b.duration.compareTo(a.duration));
+    ]..sort((a, b) => b.duration.compareTo(a.duration));
 
     setState(() {
+      _totalScreentime = Duration(minutes: totalMinutes);
       _topApps = processedApps;
       _segments = processedSegments;
       _categories = processedCategories;
@@ -161,117 +209,190 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
 
   String _parsePackageToAppName(String packageName) {
     if (!packageName.contains('.')) return packageName;
-    final parts = packageName.split('.');
-    String name = parts.last;
+    final String name = packageName.split('.').last;
     return name[0].toUpperCase() + name.substring(1);
   }
 
   IconData _getCategoryIcon(String pkg) {
     final lower = pkg.toLowerCase();
-    if (lower.contains('instagram')) return Icons.camera_alt_rounded;
-    if (lower.contains('code') || lower.contains('github') || lower.contains('studio')) return Icons.code_rounded;
-    if (lower.contains('youtube')) return Icons.play_circle_fill_rounded;
+    if (lower.contains('camera') || lower.contains('instagram')) return Icons.camera_alt_rounded;
+    if (lower.contains('code') || lower.contains('studio')) return Icons.code_rounded;
+    if (lower.contains('play') || lower.contains('video')) return Icons.play_circle_fill_rounded;
     return Icons.widgets_rounded;
+  }
+
+  void _onDockItemTap(int targetPageIndex) {
+    _pageController.animateToPage(
+      targetPageIndex,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      extendBody: true, 
       body: Stack(
         children: [
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(color: Colors.black.withOpacity(0.35)),
-            ),
-          ),
+          if (_transitionFinished)
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: _backdropOpacity,
+                child: const _StaticBackdrop(),
+              ),
+            )
+          else
+            const Positioned.fill(child: ColoredBox(color: Colors.black54)),
+
           SafeArea(
             bottom: false,
-            child: _isLoading
-                ? const Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
-                      ),
-                    ),
-                  )
-                : Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                        child: _buildTopAppBar(),
-                      ),
-                      Expanded(
-                        child: IndexedStack(
-                          index: _activeTabIndex,
-                          children: [
-                            _buildDailyHubView(),
-                            AnalyticsView(onRefresh: _fetchRealTelemetry),
-                            const BlockerView(),
-                          ],
-                        ),
-                      ),
-                    ],
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: _AuraTopAppBar(
+                    onBack: () => Navigator.of(context).pop(),
+                    onRefresh: _fetchRealTelemetry,
                   ),
+                ),
+                Expanded(
+                  child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator(strokeWidth: 1, color: _kWhite30))
+                    : PageView(
+                        controller: _pageController,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _DailyHubView(
+                            totalScreentime: _totalScreentime,
+                            segments: _segments,
+                            categories: _categories,
+                            topApps: _topApps,
+                            palette: _kAuraPalette,
+                            onRefresh: _fetchRealTelemetry,
+                          ),
+                          AnalyticsView(onRefresh: _fetchRealTelemetry),
+                          const Material(color: Colors.transparent, child: BlockerView()),
+                        ],
+                      ),
+                ),
+              ],
+            ),
           ),
-          
+
           Positioned(
-            left: 24, right: 24,
-            bottom: MediaQuery.of(context).padding.bottom > 0 ? MediaQuery.of(context).padding.bottom : 24,
-            child: _buildFloatingGlassDock(),
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.of(context).padding.bottom > 0 
+                ? MediaQuery.of(context).padding.bottom 
+                : 24,
+            child: RepaintBoundary(
+              child: _FloatingGlassDock(
+                pageOffset: _currentPageOffset,
+                onTap: _onDockItemTap,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildDailyHubView() {
-    final int hours = _totalScreentime.inHours;
-    final int mins = _totalScreentime.inMinutes.remainder(60);
+// ─── Static backdrop ──────────────────────────────────────────────────────────
+
+class _StaticBackdrop extends StatelessWidget {
+  const _StaticBackdrop();
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: const ColoredBox(color: Color(0x66000000)),
+      ),
+    );
+  }
+}
+
+// ─── Components (Rest of the UI Optimized) ────────────────────────────────────
+
+class _AuraTopAppBar extends StatelessWidget {
+  final VoidCallback onBack;
+  final VoidCallback onRefresh;
+  const _AuraTopAppBar({required this.onBack, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        TactileButton(onTap: onBack, child: const _GlassIcon(Icons.arrow_back_ios_new_rounded)),
+        const Text('AURA CORE ENGINE', style: TextStyle(color: _kWhite38, fontSize: 10, letterSpacing: 2)),
+        TactileButton(onTap: onRefresh, child: const _GlassIcon(Icons.refresh_rounded)),
+      ],
+    );
+  }
+}
+
+class _DailyHubView extends StatelessWidget {
+  final Duration totalScreentime;
+  final List<AuraPieSegment> segments;
+  final List<AuraCategorySummary> categories;
+  final List<AuraTopAppItem> topApps;
+  final List<Color> palette;
+  final Future<void> Function() onRefresh;
+
+  const _DailyHubView({
+    required this.totalScreentime,
+    required this.segments,
+    required this.categories,
+    required this.topApps,
+    required this.palette,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final int h = totalScreentime.inHours;
+    final int m = totalScreentime.inMinutes.remainder(60);
 
     return RefreshIndicator(
-      onRefresh: _fetchRealTelemetry,
+      onRefresh: onRefresh,
       color: Colors.white,
-      backgroundColor: Colors.black54,
+      backgroundColor: Colors.black,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 110.0), 
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Digital Footprint',
-              style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w300, letterSpacing: -0.6),
-            ),
+            const Text('Digital Footprint', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w300)),
             const SizedBox(height: 20),
             
-            _buildGlassPanel(
-              padding: const EdgeInsets.symmetric(vertical: 24),
+            _GlassPanel(
+              padding: const EdgeInsets.symmetric(vertical: 32),
               child: Center(
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 200, height: 200,
-                      child: CustomPaint(
-                        painter: AuraDashboardPiePainter(
-                          segments: _segments,
-                          totalMinutes: _totalScreentime.inMinutes.toDouble(),
-                          trackColor: Colors.white.withOpacity(0.04),
+                      width: 180,
+                      height: 180,
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: AuraDashboardPiePainter(
+                            segments: segments,
+                            totalMinutes: totalScreentime.inMinutes.toDouble(),
+                            trackColor: _kTrackColor,
+                          ),
                         ),
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('$hours\h $mins\m', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-                        const SizedBox(height: 2),
-                        Text('TOTAL SCREEN TIME', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.6)),
+                        Text('$h\h $m\m', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const Text('TOTAL TIME', style: TextStyle(color: _kWhite30, fontSize: 8, letterSpacing: 1)),
                       ],
                     ),
                   ],
@@ -279,100 +400,78 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
               ),
             ),
             const SizedBox(height: 24),
-
-            if (_categories.isNotEmpty) ...[
-              _buildSectionHeader('Category Matrix'),
-              _buildGlassPanel(
+            if (categories.isNotEmpty) ...[
+              const _SectionHeader('Category Matrix'),
+              _GlassPanel(
                 padding: const EdgeInsets.all(20),
                 child: Column(
-                  children: List.generate(_categories.length, (idx) {
-                    final cat = _categories[idx];
-                    return Padding(
-                      padding: EdgeInsets.only(bottom: idx == _categories.length - 1 ? 0 : 16.0),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(cat.name, style: const TextStyle(fontSize: 13, color: Colors.white)),
-                              Text('${cat.duration.inHours > 0 ? "${cat.duration.inHours}h " : ""}${cat.duration.inMinutes.remainder(60)}m', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4))),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: cat.percentage,
-                              backgroundColor: Colors.white.withOpacity(0.04),
-                              color: _auraPalette[idx % _auraPalette.length].withOpacity(0.8),
-                              minHeight: 4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                  children: List.generate(categories.length, (i) => Padding(
+                    padding: EdgeInsets.only(bottom: i == categories.length - 1 ? 0 : 16),
+                    child: _CategoryRow(category: categories[i], color: palette[i % palette.length]),
+                  )),
                 ),
               ),
-              const SizedBox(height: 24),
             ],
-
-            _buildSectionHeader('Top Consumer Channels'),
-            _buildTopAppsSection(),
+            const SizedBox(height: 24),
+            const _SectionHeader('Top Channels'),
+            _TopAppsSection(topApps: topApps),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildTopAppBar() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+class _CategoryRow extends StatelessWidget {
+  final AuraCategorySummary category;
+  final Color color;
+  const _CategoryRow({required this.category, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
       children: [
-        TactileButton(
-          onTap: () => Navigator.of(context).pop(),
-          child: _buildGlassIcon(Icons.arrow_back_ios_new_rounded),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(category.name, style: const TextStyle(fontSize: 12, color: Colors.white)),
+            Text('${category.duration.inMinutes}m', style: const TextStyle(fontSize: 12, color: _kWhite40)),
+          ],
         ),
-        const Text('AURA CORE ENGINE', style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 2.5)),
-        TactileButton(
-          onTap: _fetchRealTelemetry,
-          child: _buildGlassIcon(Icons.refresh_rounded),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: category.percentage,
+            backgroundColor: _kWhite04,
+            valueColor: AlwaysStoppedAnimation<Color>(color.withOpacity(0.7)),
+            minHeight: 4,
+          ),
         ),
       ],
     );
   }
+}
 
-  Widget _buildTopAppsSection() {
-    if (_topApps.isEmpty) {
-      return _buildGlassPanel(
-        padding: const EdgeInsets.all(24),
-        child: Center(child: Text('No background logs found.', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13))),
-      );
-    }
+class _TopAppsSection extends StatelessWidget {
+  final List<AuraTopAppItem> topApps;
+  const _TopAppsSection({required this.topApps});
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
-      children: List.generate(_topApps.length, (idx) {
-        final app = _topApps[idx];
+      children: List.generate(topApps.length, (idx) {
+        final app = topApps[idx];
         return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _buildGlassPanel(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _GlassPanel(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(10)),
-                  alignment: Alignment.center,
-                  child: Icon(app.fallbackIcon, color: app.markerColor, size: 18),
-                ),
+                Icon(app.fallbackIcon, color: app.markerColor, size: 18),
                 const SizedBox(width: 14),
-                Expanded(child: Text(app.name, style: const TextStyle(fontSize: 14, color: Colors.white), overflow: TextOverflow.ellipsis)),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('${app.duration.inHours > 0 ? "${app.duration.inHours}h " : ""}${app.duration.inMinutes.remainder(60)}m', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white)),
-                    Text(app.percentage, style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11)),
-                  ],
-                ),
+                Expanded(child: Text(app.name, style: const TextStyle(fontSize: 14, color: Colors.white))),
+                Text(app.percentage, style: const TextStyle(color: _kWhite30, fontSize: 11)),
               ],
             ),
           ),
@@ -380,85 +479,205 @@ class _AuraDashboardViewState extends State<AuraDashboardView> {
       }),
     );
   }
+}
 
-  Widget _buildFloatingGlassDock() {
+// ─── Refactored Sliding Dock Framework ──────────────────────────────────────────
+
+// ─── Refactored Sliding Dock Framework ──────────────────────────────────────────
+
+class _FloatingGlassDock extends StatelessWidget {
+  final double pageOffset;
+  final ValueChanged<int> onTap;
+  
+  const _FloatingGlassDock({required this.pageOffset, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    // Round to the closest tab index to lock the underlying structural track position
+    final int roundedTargetIndex = pageOffset.round();
+
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          height: 68, // Stable concrete physical container bounding height
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
+            color: const Color(0x0CFFFFFF), // Slightly enhanced contrast base
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0x12FFFFFF), width: 1.2),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildDockItem(index: 0, icon: Icons.fullscreen_rounded, label: 'Dashboard'),
-              _buildDockItem(index: 1, icon: Icons.insights_rounded, label: 'Analytics'),
-              _buildDockItem(index: 2, icon: Icons.block_flipped, label: 'Blocker'),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final double totalWidth = constraints.maxWidth;
+              final double elementWidth = totalWidth / 3;
+
+              return Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  // Smooth underlying highlight slider track block
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOutCubic,
+                    left: roundedTargetIndex * elementWidth,
+                    width: elementWidth,
+                    top: 6,
+                    bottom: 6,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.09),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  // Text items and icons alignment template array
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _DockItem(
+                          icon: Icons.fullscreen_rounded, 
+                          label: 'Dashboard', 
+                          matchingPageIndex: 0,
+                          currentPageOffset: pageOffset,
+                          onTap: () => onTap(0),
+                        ),
+                      ),
+                      Expanded(
+                        child: _DockItem(
+                          icon: Icons.insights_rounded, 
+                          label: 'Analytics', 
+                          matchingPageIndex: 1,
+                          currentPageOffset: pageOffset,
+                          onTap: () => onTap(1),
+                        ),
+                      ),
+                      Expanded(
+                        child: _DockItem(
+                          icon: Icons.block_flipped, 
+                          label: 'Blocker', 
+                          matchingPageIndex: 2,
+                          currentPageOffset: pageOffset,
+                          onTap: () => onTap(2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildDockItem({required int index, required IconData icon, required String label}) {
-    final bool isSelected = _activeTabIndex == index;
+class _DockItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int matchingPageIndex;
+  final double currentPageOffset;
+  final VoidCallback onTap;
+
+  const _DockItem({
+    required this.icon, 
+    required this.label, 
+    required this.matchingPageIndex,
+    required this.currentPageOffset,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Dynamic continuous text-color interpolation matching calculations
+    final double distanceToOffset = (currentPageOffset - matchingPageIndex).abs();
+    final double activationRatio = (1.0 - distanceToOffset).clamp(0.0, 1.0);
+
+    final Color itemActiveColor = Color.lerp(
+      const Color(0x61FFFFFF), // Subtle unselected white
+      Colors.white,             // Vibrant active white
+      activationRatio,
+    )!;
+
     return TactileButton(
-      onTap: () => setState(() => _activeTabIndex = index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withOpacity(0.04) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
+      onTap: onTap,
+      child: SizedBox(
+        height: double.infinity, // Expand layout bounds to absorb touch inputs cleanly
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.white38, size: 20),
+            Icon(
+              icon, 
+              color: itemActiveColor, 
+              size: 21,
+            ),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.white38, fontSize: 9, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400)),
+            Text(
+              label, 
+              style: TextStyle(
+                color: itemActiveColor, 
+                fontSize: 10,
+                fontWeight: activationRatio > 0.5 ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.1,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 12),
-      child: Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: Colors.white.withOpacity(0.4))),
-    );
-  }
+// ─── UI Utility Components ────────────────────────────────────────────────────
 
-  Widget _buildGlassIcon(IconData icon) {
-    return Container(
-      width: 40, height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      child: Icon(icon, color: Colors.white70, size: 16),
-    );
-  }
-
-  Widget _buildGlassPanel({required Widget child, EdgeInsetsGeometry? padding}) {
+class _GlassPanel extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  const _GlassPanel({required this.child, this.padding});
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.02),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
+      decoration: BoxDecoration(color: _kWhite02, borderRadius: BorderRadius.circular(20), border: Border.all(color: _kWhite05)),
       child: child,
+    );
+  }
+}
+
+class _GlassIcon extends StatelessWidget {
+  final IconData icon;
+  const _GlassIcon(this.icon);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40, height: 40,
+      decoration: BoxDecoration(color: _kWhite04, borderRadius: BorderRadius.circular(12), border: Border.all(color: _kWhite06)),
+      child: Icon(icon, color: _kWhite70, size: 16),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader(this.title);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 12),
+      child: Text(title, style: const TextStyle(fontSize: 12, color: _kWhite40)),
     );
   }
 }
@@ -467,49 +686,32 @@ class AuraDashboardPiePainter extends CustomPainter {
   final List<AuraPieSegment> segments;
   final double totalMinutes;
   final Color trackColor;
-
-  AuraDashboardPiePainter({required this.segments, required this.totalMinutes, required this.trackColor});
+  const AuraDashboardPiePainter({required this.segments, required this.totalMinutes, required this.trackColor});
 
   @override
   void paint(Canvas canvas, Size size) {
-    const double strokeWidth = 14.0;
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 14
+      ..isAntiAlias = true;
+
     final Offset center = Offset(size.width / 2, size.height / 2);
-    final double radius = (size.width - strokeWidth) / 2;
-    final Rect boundingSquare = Rect.fromCircle(center: center, radius: radius);
+    final double radius = (size.width - 14) / 2;
+    final Rect rect = Rect.fromCircle(center: center, radius: radius);
 
-    final Paint paintTrack = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..color = trackColor;
+    canvas.drawCircle(center, radius, paint..color = trackColor);
 
-    canvas.drawCircle(center, radius, paintTrack);
+    if (totalMinutes <= 0) return;
 
-    if (totalMinutes <= 0 || segments.isEmpty) return;
-
-    final Paint paintSegment = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    double currentStartAngle = -pi / 2;
-    const double angularGap = 0.07;
-
-    for (var segment in segments) {
-      final double segmentMins = segment.duration.inMinutes.toDouble();
-      if (segmentMins <= 0) continue;
-
-      final double sweepAngle = (segmentMins / totalMinutes) * 2 * pi;
-      double adjustedSweep = sweepAngle - angularGap;
-      if (adjustedSweep < 0.02) adjustedSweep = 0.02;
-
-      paintSegment.color = segment.color;
-      canvas.drawArc(boundingSquare, currentStartAngle + (angularGap / 2), adjustedSweep, false, paintSegment);
-      currentStartAngle += sweepAngle;
+    double startAngle = -pi / 2;
+    for (final seg in segments) {
+      final sweep = (seg.duration.inMinutes / totalMinutes) * 2 * pi;
+      if (sweep < 0.01) continue;
+      canvas.drawArc(rect, startAngle + 0.04, sweep - 0.08, false, paint..color = seg.color..strokeCap = StrokeCap.round);
+      startAngle += sweep;
     }
   }
 
   @override
-  bool shouldRepaint(covariant AuraDashboardPiePainter oldDelegate) {
-    return oldDelegate.totalMinutes != totalMinutes || oldDelegate.segments.length != segments.length;
-  }
+  bool shouldRepaint(AuraDashboardPiePainter old) => old.totalMinutes != totalMinutes || old.segments.length != segments.length;
 }
